@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# MultiDownloadPyrogram 项目概述
+
+## 项目简介
+这是一个基于Pyrogram框架开发的Telegram频道历史消息批量下载工具，支持多客户端并发下载、大文件分片下载、媒体组完整下载等功能。
+
+## 核心特性
+- **多客户端并发**: 使用3-5个Pyrogram客户端并行下载
+- **媒体组支持**: 完整下载Telegram相册中的所有文件
+- **大文件分片**: 大文件(>50MB)自动分片并行下载
+- **稳定下载**: 支持1000+条消息稳定下载，失败率<5%
+- **SOCKS5代理**: 支持代理127.0.0.1:7890
+
+## 项目架构
+项目采用模块化设计，主要包含以下模块：
+
+### 客户端管理模块 (client/)
+- [client_pool.py](mdc:src/client/client_pool.py) - 客户端池管理
+- [client_manager.py](mdc:src/client/client_manager.py) - 单客户端管理  
+- [client_factory.py](mdc:src/client/client_factory.py) - 客户端工厂类
+
+### 下载器模块 (downloader/)
+- [media_downloader.py](mdc:src/downloader/media_downloader.py) - 媒体下载器
+- [chunk_downloader.py](mdc:src/downloader/chunk_downloader.py) - 分片下载器
+- [group_downloader.py](mdc:src/downloader/group_downloader.py) - 媒体组下载器
+
+### 任务管理模块 (task/)
+- [task_manager.py](mdc:src/task/task_manager.py) - 任务管理器
+- [task_queue.py](mdc:src/task/task_queue.py) - 任务队列
+
+### 工具模块 (utils/)
+- [logger.py](mdc:src/utils/logger.py) - 日志管理
+- [config.py](mdc:src/utils/config.py) - 配置管理
+- [exceptions.py](mdc:src/utils/exceptions.py) - 异常处理
+
+## 需求文档
+详细的功能需求和技术规范请参考 [requirements_document.md](mdc:requirements_document.md)
+
+## 开发语言
+- Python 3.8+
+- 主要依赖：Pyrogram
+- 测试框架：pytest
+

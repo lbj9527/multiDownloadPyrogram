@@ -1,0 +1,120 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# 测试要求和规范
+
+## 测试覆盖率要求
+**严格执行100%测试覆盖率政策**
+
+### 覆盖率指标 (TR-001)
+- **代码覆盖率**: ≥90%
+- **分支覆盖率**: ≥85%  
+- **函数覆盖率**: 100% (强制要求)
+- **文件覆盖率**: 100% (强制要求)
+
+### 文件对应关系
+每个源码文件都必须有对应的测试文件：
+
+#### 客户端模块测试
+- [test_client_pool.py](mdc:tests/test_client/test_client_pool.py) ↔ [client_pool.py](mdc:src/client/client_pool.py)
+- [test_client_manager.py](mdc:tests/test_client/test_client_manager.py) ↔ [client_manager.py](mdc:src/client/client_manager.py)
+- [test_client_factory.py](mdc:tests/test_client/test_client_factory.py) ↔ [client_factory.py](mdc:src/client/client_factory.py)
+
+#### 下载器模块测试
+- [test_media_downloader.py](mdc:tests/test_downloader/test_media_downloader.py) ↔ [media_downloader.py](mdc:src/downloader/media_downloader.py)
+- [test_chunk_downloader.py](mdc:tests/test_downloader/test_chunk_downloader.py) ↔ [chunk_downloader.py](mdc:src/downloader/chunk_downloader.py)
+- [test_group_downloader.py](mdc:tests/test_downloader/test_group_downloader.py) ↔ [group_downloader.py](mdc:src/downloader/group_downloader.py)
+
+#### 任务管理模块测试
+- [test_task_manager.py](mdc:tests/test_task/test_task_manager.py) ↔ [task_manager.py](mdc:src/task/task_manager.py)  
+- [test_task_queue.py](mdc:tests/test_task/test_task_queue.py) ↔ [task_queue.py](mdc:src/task/task_queue.py)
+
+#### 工具模块测试
+- [test_logger.py](mdc:tests/test_utils/test_logger.py) ↔ [logger.py](mdc:src/utils/logger.py)
+- [test_config.py](mdc:tests/test_utils/test_config.py) ↔ [config.py](mdc:src/utils/config.py)
+- [test_exceptions.py](mdc:tests/test_utils/test_exceptions.py) ↔ [exceptions.py](mdc:src/utils/exceptions.py)
+
+## 测试编写规范
+
+### 函数测试要求
+每个函数必须包含以下4种测试场景：
+- **正常输入测试** - 验证正常参数下的功能
+- **边界条件测试** - 验证边界值和极限情况  
+- **异常输入测试** - 验证错误输入的处理
+- **空值/None测试** - 验证空值处理能力
+
+### 测试命名规范
+```python
+# 测试函数命名: test_[函数名]_[测试场景]
+def test_download_media_with_valid_message():  # 正常测试
+    pass
+
+def test_download_media_with_large_file():     # 边界测试
+    pass
+
+def test_download_media_with_invalid_message(): # 异常测试
+    pass
+
+def test_download_media_with_none_message():    # 空值测试
+    pass
+```
+
+## Mock和测试数据
+
+### Mock对象要求
+- **Pyrogram Client Mock**: 模拟Telegram客户端，避免真实网络请求
+- **Media Message Mock**: 模拟各种类型的媒体消息
+- **Download Progress Mock**: 模拟下载进度回调
+- **Network Exception Mock**: 模拟网络异常场景
+
+### 测试数据管理
+- 测试数据存放在 [fixtures/](mdc:tests/fixtures) 目录
+- Mock对象存放在 [mocks/](mdc:tests/mocks) 目录
+- 配置文件 [conftest.py](mdc:tests/conftest.py) 管理pytest设置
+
+## 测试执行
+
+### 测试命令
+```bash
+# 运行所有测试
+pytest tests/
+
+# 运行测试并生成覆盖率报告
+pytest tests/ --cov=src --cov-report=html --cov-report=term
+
+# 运行特定模块测试
+pytest tests/test_client/
+
+# 运行特定测试函数
+pytest tests/test_client/test_client_pool.py::test_create_client_pool
+```
+
+### 持续集成要求
+- 代码提交前必须通过所有测试
+- 测试覆盖率不得低于设定标准
+- 性能测试必须通过回归检查
+- 集成测试自动化执行
+
+## 特殊测试场景
+
+### Pyrogram相关测试
+- 客户端认证流程测试
+- 代理连接测试
+- FloodWait异常处理测试
+- 媒体下载进度测试
+- 分片下载完整性测试
+
+### 并发测试
+- 多客户端并发访问测试
+- 任务队列线程安全测试
+- 资源竞争情况测试
+- 客户端池容量管理测试
+
+### 性能测试
+- 下载速度性能测试
+- 内存使用测试
+- 大规模下载稳定性测试
+- 错误恢复能力测试
+

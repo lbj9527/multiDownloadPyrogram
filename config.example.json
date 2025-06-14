@@ -1,0 +1,30 @@
+{
+  "api": {
+    "api_id": 12345678,
+    "api_hash": "your_api_hash_here"
+  },
+  "proxy": {
+    "scheme": "socks5",
+    "hostname": "127.0.0.1",
+    "port": 7890,
+    "username": null,
+    "password": null
+  },
+  "download": {
+    "client_count": 3,
+    "max_concurrent_transmissions": 1,
+    "sleep_threshold": 10,
+    "download_dir": "downloads",
+    "large_file_threshold": 52428800,
+    "chunk_size": 1048576,
+    "max_retries": 3,
+    "max_concurrent_downloads": 5,
+    "progress_update_interval": 1.0
+  },
+  "task": {
+    "channel_username": "@your_channel_name",
+    "start_message_id": null,
+    "end_message_id": null,
+    "limit": 1000
+  }
+} 

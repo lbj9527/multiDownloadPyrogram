@@ -1,0 +1,1029 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Pyrogram技术规范和最佳实践
+
+## Pyrogram框架状态
+- **当前状态**: 项目已归档(2024年12月)，但仍可正常使用
+- **版本要求**: 使用最新稳定版本
+- **文档**: 有完整的官方文档可参考
+- **社区**: 活跃的社区支持和示例代码
+
+## 核心API使用规范
+
+### 客户端管理
+```python
+# 正确的客户端初始化
+from pyrogram import Client
+
+client = Client(
+    name="session_name",
+    api_id=your_api_id,
+    api_hash="your_api_hash",
+    proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890)
+)
+```
+
+### 多客户端并发要求
+- **会话隔离**: 每个并发客户端必须使用独立的会话文件
+- **会话命名**: 使用不同的session名称 (session1.session, session2.session等)
+- **并发限制**: 建议使用3-5个并发客户端，避免触发限流
+- **故障切换**: 实现客户端故障自动切换机制
+
+### 媒体下载API
+
+#### 基础下载 - download_media()
+```python
+# 基础媒体下载
+await client.download_media(
+    message=message,
+    file_name="custom_filename.ext",
+    progress=progress_callback
+)
+```
+
+#### 流式下载 - stream_media()
+```python
+# 大文件分片下载
+async for chunk in client.stream_media(message, chunk_size=1024*1024):
+    # 处理每个分片
+    handle_chunk(chunk)
+```
+
+#### 媒体组处理 - get_media_group()
+```python
+# 获取媒体组消息
+media_group = await client.get_media_group(
+    chat_id=chat_id,
+    message_id=message_id
+)
+```
+
+## 异常处理规范
+
+### 必须处理的异常类型
+```python
+from pyrogram.errors import (
+    FloodWait,
+    SessionPasswordNeeded,
+    PhoneCodeInvalid,
+    NetworkError,
+    RPCError
+)
+
+# FloodWait异常处理
+try:
+    await client.download_media(message)
+except FloodWait as e:
+    await asyncio.sleep(e.value)
+    # 重试下载
+```
+
+### 重试机制
+- **网络异常**: 自动重试3次，间隔递增
+- **FloodWait**: 严格按照返回的等待时间执行
+- **认证异常**: 记录错误并切换客户端
+- **其他异常**: 记录详细日志，继续处理其他任务
+
+## 代理配置规范
+
+### SOCKS5代理设置
+```python
+# 统一的代理配置
+PROXY_CONFIG = {
+    "scheme": "socks5",
+    "hostname": "127.0.0.1", 
+    "port": 7890
+}
+
+# 应用到客户端
+client = Client(
+    name="session",
+    proxy=PROXY_CONFIG
+)
+```
+
+### 代理连接检测
+- 启动时验证代理连接
+- 定期检查代理状态
+- 代理失败时的处理策略
+- 代理重连机制
+
+## 性能优化策略
+
+### 并发控制
+```python
+# 控制并发传输数量
+client = Client(
+    name="session",
+    max_concurrent_transmissions=5
+)
+```
+
+### 分片下载优化
+- **大文件阈值**: 50MB以上文件启用分片下载
+- **分片大小**: 默认1MB，可根据网络情况调整
+- **并行分片**: 同时下载多个分片，加速下载
+- **完整性验证**: 下载完成后验证文件完整性
+
+### 内存管理
+- 大文件下载时控制内存使用
+- 及时释放已下载的分片内存
+- 客户端连接池合理管理
+- 避免内存泄漏
+
+## 消息处理规范
+
+### 消息类型识别
+```python
+# 识别不同类型的媒体消息
+if message.photo:
+    # 处理图片
+    pass
+elif message.video:
+    # 处理视频
+    pass
+elif message.document:
+    # 处理文档
+    pass
+elif message.media_group_id:
+    # 处理媒体组
+    pass
+```
+
+### 消息ID范围处理
+```python
+# 按消息ID范围获取消息
+async for message in client.get_chat_history(
+    chat_id=chat_id,
+    offset_id=end_message_id,
+    limit=None
+):
+    if message.id < start_message_id:
+        break
+    # 处理消息
+```
+
+## 错误恢复策略
+
+### 客户端故障处理
+- 检测客户端连接状态
+- 自动切换到备用客户端
+- 记录故障客户端信息
+- 定期尝试恢复故障客户端
+
+### 下载失败处理
+- 记录失败的下载任务
+- 实现重试队列
+- 分析失败原因
+- 提供手动重试机制
+
+## 限流和速率控制
+
+### Telegram API限制
+- 遵守Telegram官方API限制
+- 实现智能等待机制
+- 避免频繁请求触发限流
+- 监控API调用频率
+
+### 自适应速率控制
+- 根据网络状况调整下载速度
+- 动态调整并发数量
+- 监控服务器响应时间
+- 实现退避策略
+
+## 安全和隐私
+
+### 会话文件安全
+- 会话文件加密存储
+- 定期清理临时文件
+- 避免会话文件泄露
+- 实现安全的会话管理
+
+### 日志安全
+- 敏感信息不记录到日志
+- API密钥和Token保护
+- 用户隐私信息脱敏
+- 日志文件访问控制
+
+## 多会话并发下载最佳实践
+
+### 会话管理核心原则
+
+**会话隔离要求(Critical)**
+- 每个客户端必须使用独立的会话文件或会话字符串
+- 禁止在多个客户端中同时使用同一会话
+- 每个并发客户端必须从头开始授权账户
+- 会话文件命名规范：`session_client_{index}.session`
+
+**正确的多客户端创建方式**
+```python
+# 正确：每个客户端使用独立会话
+async def create_multiple_clients(count: int) -> List[Client]:
+    clients = []
+    for i in range(count):
+        client = Client(
+            name=f"session_client_{i}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890),
+            workdir=f"sessions/client_{i}"  # 独立工作目录
+        )
+        clients.append(client)
+    return clients
+
+# 错误：不要共享会话
+# client1 = Client("shared_session", ...)
+# client2 = Client("shared_session", ...)  # 禁止这样做
+```
+
+**会话字符串优化**
+```python
+# 使用会话字符串创建内存会话(性能更好)
+async def create_client_from_session_string(session_string: str, index: int) -> Client:
+    return Client(
+        name=f"memory_client_{index}",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        session_string=session_string,
+        proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890),
+        no_updates=True,
+        max_concurrent_transmissions=1
+    )
+```
+
+## 下载API使用规范
+
+### 媒体下载方法选择
+
+**download_media() - 标准下载**
+```python
+# 适用于常规文件下载
+file_path = await client.download_media(
+    message=message,
+    file_name="downloads/",  # 目录路径
+    block=True,  # 阻塞下载
+    progress=progress_callback
+)
+```
+
+**stream_media() - 流式下载(大文件首选)**
+```python
+# 适用于大文件(>10MB)分片下载
+async def download_large_file(client: Client, message: Message):
+    async for chunk in client.stream_media(message):
+        # chunk最大1MiB(1024*1024字节)
+        file.write(chunk)
+        # 处理进度更新
+        current_size += len(chunk)
+        await progress_callback(current_size, total_size)
+```
+
+**get_media_group() - 媒体组处理**
+```python
+# 获取媒体组中的所有文件
+media_group = await client.get_media_group(
+    chat_id=chat_id,
+    message_id=message_id
+)
+
+# 并发下载媒体组中的文件
+tasks = []
+for message in media_group:
+    task = asyncio.create_task(download_media_file(client, message))
+    tasks.append(task)
+await asyncio.gather(*tasks)
+```
+
+## 客户端配置最佳实践
+
+### 性能优化配置
+
+**并发传输控制**
+```python
+client = Client(
+    name="session_name",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    max_concurrent_transmissions=1,  # 默认值，根据需要调整
+    proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890)
+)
+```
+
+**频率限制处理**
+```python
+client = Client(
+    name="session_name",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    sleep_threshold=10  # FloodWait<10s自动等待重试
+)
+```
+
+## 异常处理规范
+
+### Pyrogram特有异常处理
+
+**FloodWait异常处理**
+```python
+from pyrogram.errors import FloodWait
+import asyncio
+
+async def download_with_retry(client: Client, message: Message, max_retries: int = 3):
+    for attempt in range(max_retries):
+        try:
+            return await client.download_media(message)
+        except FloodWait as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(e.x)  # 等待指定秒数
+                continue
+            raise
+        except Exception as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)  # 指数退避
+                continue
+            raise
+```
+
+**FLOOD_PREMIUM_WAIT处理**
+```python
+# 新的通知性异常，不应中断下载
+try:
+    await client.download_media(message)
+except Exception as e:
+    if "FLOOD_PREMIUM_WAIT" in str(e):
+        # 这是通知性异常，记录日志但继续执行
+        logger.warning(f"FLOOD_PREMIUM_WAIT received: {e}")
+        # 可选：短暂延迟后继续
+        await asyncio.sleep(1)
+    else:
+        raise
+```
+
+### 网络异常处理
+
+**连接异常重试**
+```python
+import asyncio
+from typing import Optional
+
+async def ensure_client_connected(client: Client, max_retries: int = 3) -> bool:
+    for attempt in range(max_retries):
+        try:
+            if not client.is_connected:
+                await client.connect()
+            return True
+        except Exception as e:
+            logger.error(f"Connection attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)
+            else:
+                return False
+    return False
+```
+
+## 性能优化建议
+
+### 文件下载优化
+
+**进度回调优化**
+```python
+import time
+from typing import Callable, Optional
+
+class ProgressTracker:
+    def __init__(self, update_interval: float = 1.0):
+        self.last_update = 0
+        self.update_interval = update_interval
+    
+    async def __call__(self, current: int, total: int) -> None:
+        now = time.time()
+        if now - self.last_update >= self.update_interval:
+            percentage = (current / total) * 100
+            speed = current / (now - self.start_time) if hasattr(self, 'start_time') else 0
+            logger.info(f"Download progress: {percentage:.1f}% ({speed/1024:.1f} KB/s)")
+            self.last_update = now
+```
+
+**内存使用优化**
+```python
+# 大文件流式处理，避免内存溢出
+async def download_large_file_streaming(client: Client, message: Message, output_path: str):
+    total_size = message.document.file_size if message.document else 0
+    downloaded = 0
+    
+    with open(output_path, 'wb') as f:
+        async for chunk in client.stream_media(message):
+            f.write(chunk)
+            downloaded += len(chunk)
+            
+            # 定期刷新缓冲区
+            if downloaded % (1024 * 1024 * 10) == 0:  # 每10MB刷新一次
+                f.flush()
+```
+
+### 并发控制优化
+
+**限制并发数量**
+```python
+import asyncio
+from asyncio import Semaphore
+
+async def download_multiple_files(clients: List[Client], messages: List[Message], max_concurrent: int = 5):
+    semaphore = Semaphore(max_concurrent)
+    
+    async def download_with_semaphore(client: Client, message: Message):
+        async with semaphore:
+            return await client.download_media(message)
+    
+    tasks = [download_with_semaphore(client, msg) for client, msg in zip(clients, messages)]
+    return await asyncio.gather(*tasks, return_exceptions=True)
+```
+
+## 资源管理规范
+
+### 客户端生命周期管理
+
+**客户端工厂模式**
+```python
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+
+class ClientFactory:
+    def __init__(self, api_id: int, api_hash: str, proxy_config: dict):
+        self.api_id = api_id
+        self.api_hash = api_hash
+        self.proxy_config = proxy_config
+        self.clients: List[Client] = []
+    
+    @asynccontextmanager
+    async def create_clients(self, count: int) -> AsyncGenerator[List[Client], None]:
+        clients = []
+        try:
+            for i in range(count):
+                client = Client(
+                    name=f"session_{i}",
+                    api_id=self.api_id,
+                    api_hash=self.api_hash,
+                    proxy=self.proxy_config,
+                    workdir=f"sessions/client_{i}"
+                )
+                await client.start()
+                clients.append(client)
+            
+            yield clients
+        finally:
+            # 确保客户端正确关闭
+            for client in clients:
+                try:
+                    await client.stop()
+                except Exception as e:
+                    logger.error(f"Error stopping client: {e}")
+```
+
+**会话清理**
+```python
+import os
+import shutil
+
+async def cleanup_session_files(session_dir: str):
+    """清理会话文件"""
+    try:
+        if os.path.exists(session_dir):
+            shutil.rmtree(session_dir)
+        logger.info(f"Cleaned up session directory: {session_dir}")
+    except Exception as e:
+        logger.error(f"Error cleaning up sessions: {e}")
+```
+
+## 调试和监控
+
+### 日志配置
+```python
+import logging
+
+# 配置Pyrogram日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# 设置Pyrogram特定日志级别
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
+logging.getLogger("pyrogram.session").setLevel(logging.INFO)
+```
+
+### 性能监控
+```python
+import time
+import psutil
+from dataclasses import dataclass
+
+@dataclass
+class DownloadStats:
+    start_time: float
+    bytes_downloaded: int
+    files_downloaded: int
+    memory_usage_mb: float
+    
+    @property
+    def duration(self) -> float:
+        return time.time() - self.start_time
+    
+    @property
+    def average_speed_mbps(self) -> float:
+        if self.duration > 0:
+            return (self.bytes_downloaded / 1024 / 1024) / self.duration
+        return 0
+
+def get_memory_usage() -> float:
+    """获取当前内存使用量(MB)"""
+    process = psutil.Process()
+    return process.memory_info().rss / 1024 / 1024
+```
+
+## Pyrogram官方compose()方法 - 多客户端管理最佳实践
+
+### 官方推荐方案
+**使用pyrogram.compose()方法**是Pyrogram官方提供的多客户端管理解决方案，这是管理多个客户端并发运行的标准方法。
+
+### compose()方法核心特性
+
+**基本语法**
+```python
+import asyncio
+from pyrogram import Client, compose
+
+async def main():
+    clients = [
+        Client("session_client_0", api_id=API_ID, api_hash=API_HASH),
+        Client("session_client_1", api_id=API_ID, api_hash=API_HASH),
+        Client("session_client_2", api_id=API_ID, api_hash=API_HASH),
+    ]
+    
+    # 并发运行多个客户端(默认模式)
+    await compose(clients)
+    
+    # 或者顺序运行
+    await compose(clients, sequential=True)
+
+asyncio.run(main())
+```
+
+**参数说明**
+- `clients`: List[Client] - 客户端对象列表
+- `sequential`: bool, optional - 是否顺序运行，默认False(并发运行)
+
+### 多会话并发下载最佳实践
+
+### 会话管理核心原则
+
+**会话隔离要求(Critical)**
+- 每个客户端必须使用独立的会话文件或会话字符串
+- 禁止在多个客户端中同时使用同一会话
+- 每个并发客户端必须从头开始授权账户
+- 会话文件命名规范：`session_client_{index}.session`
+
+**正确的多客户端创建方式**
+```python
+# 正确：每个客户端使用独立会话
+async def create_multiple_clients(count: int) -> List[Client]:
+    clients = []
+    for i in range(count):
+        client = Client(
+            name=f"session_client_{i}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890),
+            workdir=f"sessions/client_{i}"  # 独立工作目录
+        )
+        clients.append(client)
+    return clients
+
+# 使用compose()方法运行
+async def run_multi_clients():
+    clients = await create_multiple_clients(3)
+    await compose(clients)
+
+# 错误：不要共享会话
+# client1 = Client("shared_session", ...)
+# client2 = Client("shared_session", ...)  # 禁止这样做
+```
+
+**会话字符串优化**
+```python
+# 使用会话字符串创建内存会话(性能更好)
+async def create_client_from_session_string(session_string: str, index: int) -> Client:
+    return Client(
+        name=f"memory_client_{index}",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        session_string=session_string,
+        proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890),
+        no_updates=True,
+        max_concurrent_transmissions=1
+    )
+```
+
+**下载API选择策略**
+```python
+# 标准下载 - 适合常规文件
+async def standard_download(client: Client, message):
+    file_path = await client.download_media(
+        message,
+        progress=progress_callback,
+        progress_args=(message.id,)
+    )
+    return file_path
+
+# 流式下载 - 适合大文件(>10MB)
+async def stream_download(client: Client, message):
+    async for chunk in client.stream_media(message, limit=1024*1024):  # 1MB chunks
+        # 处理数据块
+        process_chunk(chunk)
+
+# 智能选择下载方式
+async def smart_download(client: Client, message):
+    file_size = getattr(message.document, 'file_size', 0) or \
+                getattr(message.video, 'file_size', 0) or \
+                getattr(message.photo, 'file_size', 0)
+    
+    if file_size > 10 * 1024 * 1024:  # >10MB
+        return await stream_download(client, message)
+    else:
+        return await standard_download(client, message)
+```
+
+**媒体组处理**
+```python
+# 获取媒体组
+async def download_media_group(client: Client, message):
+    if message.media_group_id:
+        # 获取完整媒体组
+        media_group = await client.get_media_group(
+            message.chat.id, 
+            message.id
+        )
+        
+        # 并发下载媒体组中的所有文件
+        download_tasks = []
+        for media_message in media_group:
+            task = smart_download(client, media_message)
+            download_tasks.append(task)
+        
+        results = await asyncio.gather(*download_tasks, return_exceptions=True)
+        return results
+    else:
+        return await smart_download(client, message)
+```
+
+### 性能优化配置
+
+**客户端性能参数**
+```python
+# 推荐的客户端配置
+client = Client(
+    name="session_client_0",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890),
+    max_concurrent_transmissions=1,  # 控制并发传输数量
+    sleep_threshold=10,              # FloodWait自动处理阈值(秒)
+    no_updates=True,                 # 禁用更新接收(下载专用)
+    workdir="sessions/client_0"      # 独立工作目录
+)
+```
+
+**关键参数说明**
+- `max_concurrent_transmissions`: 控制并发传输数量，默认1，可根据网络条件调整
+- `sleep_threshold`: 小于此值的FloodWait会自动等待重试，默认10秒
+- `no_updates`: 禁用更新接收，专用于下载任务，减少资源消耗
+- `workdir`: 独立工作目录，确保会话文件隔离
+
+**并发控制策略**
+```python
+import asyncio
+from asyncio import Semaphore
+
+class ConcurrencyController:
+    def __init__(self, max_concurrent_downloads: int = 5):
+        self.download_semaphore = Semaphore(max_concurrent_downloads)
+        self.client_semaphore = Semaphore(3)  # 最多3个活跃客户端
+    
+    async def controlled_download(self, client: Client, message):
+        """带并发控制的下载"""
+        async with self.download_semaphore:
+            async with self.client_semaphore:
+                return await smart_download(client, message)
+    
+    async def batch_download_with_compose(self, clients: List[Client], messages: List):
+        """使用compose()和并发控制的批量下载"""
+        async def client_download_worker(client: Client, assigned_messages: List):
+            async with client:
+                tasks = []
+                for message in assigned_messages:
+                    task = self.controlled_download(client, message)
+                    tasks.append(task)
+                return await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 分配消息给不同客户端
+        chunk_size = len(messages) // len(clients)
+        client_tasks = []
+        
+        for i, client in enumerate(clients):
+            start_idx = i * chunk_size
+            end_idx = start_idx + chunk_size if i < len(clients) - 1 else len(messages)
+            assigned_messages = messages[start_idx:end_idx]
+            
+            task = client_download_worker(client, assigned_messages)
+            client_tasks.append(task)
+        
+        # 并发执行所有客户端任务
+        results = await asyncio.gather(*client_tasks, return_exceptions=True)
+        return results
+```
+
+### 异常处理最佳实践
+
+**FloodWait处理**
+```python
+from pyrogram.errors import FloodWait, FLOOD_PREMIUM_WAIT
+import asyncio
+
+async def handle_flood_wait(func, *args, **kwargs):
+    """处理FloodWait异常的装饰器函数"""
+    max_retries = 3
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            return await func(*args, **kwargs)
+        except FloodWait as e:
+            print(f"FloodWait: 需要等待 {e.value} 秒")
+            await asyncio.sleep(e.value)
+            retry_count += 1
+        except FLOOD_PREMIUM_WAIT as e:
+            # 这是通知性异常，不需要中断下载
+            print(f"Premium FloodWait通知: {e}")
+            return await func(*args, **kwargs)
+        except Exception as e:
+            print(f"其他异常: {e}")
+            if retry_count < max_retries - 1:
+                await asyncio.sleep(2 ** retry_count)  # 指数退避
+                retry_count += 1
+            else:
+                raise
+    
+    raise Exception(f"重试 {max_retries} 次后仍然失败")
+
+# 使用示例
+async def safe_download(client: Client, message):
+    return await handle_flood_wait(client.download_media, message)
+```
+
+**网络异常重连**
+```python
+import asyncio
+from pyrogram.errors import NetworkError, TimeoutError
+
+class RobustClient:
+    def __init__(self, client: Client):
+        self.client = client
+        self.max_reconnect_attempts = 5
+    
+    async def ensure_connected(self):
+        """确保客户端连接"""
+        if not self.client.is_connected:
+            await self.client.connect()
+    
+    async def robust_download(self, message, max_retries: int = 3):
+        """带重连机制的下载"""
+        for attempt in range(max_retries):
+            try:
+                await self.ensure_connected()
+                return await self.client.download_media(message)
+            except (NetworkError, TimeoutError) as e:
+                print(f"网络错误 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # 指数退避
+                    # 重新连接
+                    try:
+                        await self.client.disconnect()
+                        await asyncio.sleep(1)
+                        await self.client.connect()
+                    except:
+                        pass
+                else:
+                    raise
+        
+        raise Exception("网络重试失败")
+```
+
+### 资源管理和清理
+
+**客户端生命周期管理**
+```python
+class ClientManager:
+    def __init__(self):
+        self.clients: List[Client] = []
+        self.active_tasks: List[asyncio.Task] = []
+    
+    async def create_clients(self, count: int) -> List[Client]:
+        """创建多个客户端"""
+        self.clients = []
+        for i in range(count):
+            client = Client(
+                name=f"client_{i}",
+                api_id=API_ID,
+                api_hash=API_HASH,
+                proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890),
+                max_concurrent_transmissions=1,
+                sleep_threshold=10,
+                no_updates=True,
+                workdir=f"sessions/client_{i}"
+            )
+            self.clients.append(client)
+        return self.clients
+    
+    async def start_all_clients(self):
+        """启动所有客户端"""
+        start_tasks = [client.start() for client in self.clients]
+        await asyncio.gather(*start_tasks, return_exceptions=True)
+    
+    async def stop_all_clients(self):
+        """停止所有客户端"""
+        stop_tasks = [client.stop() for client in self.clients]
+        await asyncio.gather(*stop_tasks, return_exceptions=True)
+    
+    async def cleanup(self):
+        """清理资源"""
+        # 取消活跃任务
+        for task in self.active_tasks:
+            if not task.done():
+                task.cancel()
+        
+        # 等待任务完成
+        if self.active_tasks:
+            await asyncio.gather(*self.active_tasks, return_exceptions=True)
+        
+        # 停止所有客户端
+        await self.stop_all_clients()
+        
+        # 清理客户端列表
+        self.clients.clear()
+        self.active_tasks.clear()
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.cleanup()
+
+# 使用示例
+async def main():
+    async with ClientManager() as manager:
+        clients = await manager.create_clients(3)
+        await manager.start_all_clients()
+        
+        # 使用compose()方法运行
+        await compose(clients)
+        
+        # 资源会自动清理
+```
+
+### 完整的多客户端下载示例
+
+```python
+import asyncio
+from pyrogram import Client, compose
+from typing import List
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class MultiClientDownloader:
+    def __init__(self, api_id: int, api_hash: str, client_count: int = 3):
+        self.api_id = api_id
+        self.api_hash = api_hash
+        self.client_count = client_count
+        self.clients: List[Client] = []
+    
+    def create_clients(self) -> List[Client]:
+        """创建多个客户端"""
+        clients = []
+        for i in range(self.client_count):
+            client = Client(
+                name=f"downloader_{i}",
+                api_id=self.api_id,
+                api_hash=self.api_hash,
+                proxy=dict(scheme="socks5", hostname="127.0.0.1", port=7890),
+                workdir=f"sessions/downloader_{i}",
+                max_concurrent_transmissions=1,
+                sleep_threshold=10,
+                no_updates=True
+            )
+            clients.append(client)
+        return clients
+    
+    async def download_with_compose(self, channel_name: str, message_limit: int = 1000):
+        """使用compose()方法进行多客户端下载"""
+        self.clients = self.create_clients()
+        
+        async def client_download_task(client: Client, client_index: int):
+            """单个客户端的下载任务"""
+            async with client:
+                logger.info(f"客户端 {client_index} 开始工作")
+                
+                # 获取消息
+                messages = []
+                async for message in client.get_chat_history(channel_name, limit=message_limit):
+                    if message.media:
+                        messages.append(message)
+                
+                # 分配给当前客户端的消息
+                client_messages = messages[client_index::self.client_count]
+                
+                logger.info(f"客户端 {client_index} 分配到 {len(client_messages)} 个媒体消息")
+                
+                # 下载分配的消息
+                downloaded = 0
+                for message in client_messages:
+                    try:
+                        if message.media_group_id:
+                            # 处理媒体组
+                            media_group = await client.get_media_group(
+                                message.chat.id, message.id
+                            )
+                            for media_msg in media_group:
+                                await client.download_media(media_msg)
+                                downloaded += 1
+                        else:
+                            # 单个媒体文件
+                            await client.download_media(message)
+                            downloaded += 1
+                        
+                        logger.info(f"客户端 {client_index} 已下载: {downloaded}")
+                        
+                    except Exception as e:
+                        logger.error(f"客户端 {client_index} 下载失败: {e}")
+                        continue
+                
+                logger.info(f"客户端 {client_index} 完成，共下载 {downloaded} 个文件")
+        
+        # 创建所有客户端任务
+        tasks = [
+            client_download_task(client, i) 
+            for i, client in enumerate(self.clients)
+        ]
+        
+        # 并发执行所有任务
+        try:
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            logger.error(f"下载过程中出现错误: {e}")
+        finally:
+            # 清理资源
+            for client in self.clients:
+                try:
+                    await client.stop()
+                except:
+                    pass
+
+# 使用示例
+async def main():
+    downloader = MultiClientDownloader(
+        api_id=YOUR_API_ID,
+        api_hash="YOUR_API_HASH",
+        client_count=3
+    )
+    
+    await downloader.download_with_compose("@channel_username", message_limit=1000)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## 关键要点总结
+
+1. **必须使用compose()方法**：这是Pyrogram官方推荐的多客户端管理方案
+2. **会话完全隔离**：每个客户端使用独立的会话文件，绝不共享
+3. **合理的并发控制**：使用信号量控制并发数量，避免过载
+4. **完善的异常处理**：处理FloodWait、网络异常等常见问题
+5. **资源生命周期管理**：确保客户端正确启动和停止
+6. **性能优化配置**：使用no_updates、sleep_threshold等参数优化下载性能
+
+
+
+
+
+
+
+
+
+
+
+
