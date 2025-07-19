@@ -1,0 +1,16 @@
+{
+  "recent_channels": [],
+  "default_settings": {
+    "start_message_id": 1,
+    "message_count": 100,
+    "include_media": true,
+    "include_text": true,
+    "media_types": [
+      "photo",
+      "video",
+      "document",
+      "audio"
+    ],
+    "max_file_size": null
+  }
+}
