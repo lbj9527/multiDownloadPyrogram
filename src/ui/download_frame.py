@@ -727,7 +727,10 @@ class DownloadFrame:
         """处理下载事件"""
         try:
             # 在主线程中更新UI
-            self.parent.after(0, self._update_ui_from_download_event, event)
+            if self.parent:
+                self.parent.after(0, self._update_ui_from_download_event, event)
+            else:
+                self.logger.warning("父窗口对象不存在，无法更新UI")
         except Exception as e:
             self.logger.error(f"处理下载事件失败: {e}")
 

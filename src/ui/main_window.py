@@ -42,18 +42,51 @@ class MainWindow:
         self.root.title(self.app_config["app"]["name"])
         
         # 设置窗口大小和位置
-        window_config = self.app_config["app"]["window_size"]
-        width = window_config["width"]
-        height = window_config["height"]
-        
-        # 计算居中位置
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
-        self.root.minsize(800, 600)
+        try:
+            window_config = self.app_config["app"]["window_size"]
+            width = window_config.get("width", 1200)
+            height = window_config.get("height", 800)
+
+            # 验证窗口尺寸
+            if width <= 0 or height <= 0:
+                width, height = 1200, 800
+                self.logger.warning("窗口尺寸配置无效，使用默认尺寸")
+
+            # 计算居中位置
+            if self.root:
+                screen_width = self.root.winfo_screenwidth()
+                screen_height = self.root.winfo_screenheight()
+
+                # 验证屏幕尺寸
+                if screen_width <= 0 or screen_height <= 0:
+                    self.logger.error("屏幕尺寸获取失败，使用默认位置")
+                    x, y = 100, 100
+                else:
+                    # 确保窗口不超出屏幕边界
+                    if width > screen_width:
+                        width = int(screen_width * 0.9)
+                    if height > screen_height:
+                        height = int(screen_height * 0.9)
+
+                    x = max(0, (screen_width - width) // 2)
+                    y = max(0, (screen_height - height) // 2)
+
+                self.root.geometry(f"{width}x{height}+{x}+{y}")
+                self.root.minsize(800, 600)
+
+                self.logger.debug(f"主窗口设置: {width}x{height}+{x}+{y}")
+            else:
+                self.logger.error("主窗口对象不存在")
+
+        except Exception as e:
+            self.logger.error(f"设置窗口大小和位置失败: {e}")
+            # 使用默认设置
+            try:
+                if self.root:
+                    self.root.geometry("1200x800+100+100")
+                    self.root.minsize(800, 600)
+            except Exception as fallback_error:
+                self.logger.error(f"设置默认窗口配置失败: {fallback_error}")
         
         # 设置窗口图标（如果有的话）
         try:
@@ -210,7 +243,10 @@ class MainWindow:
         """处理接收到的事件"""
         try:
             # 在主线程中更新UI
-            self.root.after(0, self._update_ui_from_event, event)
+            if self.root:
+                self.root.after(0, self._update_ui_from_event, event)
+            else:
+                self.logger.warning("主窗口对象不存在，无法更新UI")
         except Exception as e:
             self.logger.error(f"处理事件失败: {e}")
     
@@ -237,10 +273,11 @@ class MainWindow:
     def update_status(self, message: str = "就绪", color: str = "white"):
         """更新状态栏消息"""
         try:
-            self.status_label.configure(text=message, text_color=color)
-            
+            if hasattr(self, 'status_label') and self.status_label:
+                self.status_label.configure(text=message, text_color=color)
+
             # 5秒后恢复默认状态
-            if message != "就绪":
+            if message != "就绪" and self.root:
                 self.root.after(5000, lambda: self.update_status())
         except Exception as e:
             self.logger.error(f"更新状态失败: {e}")

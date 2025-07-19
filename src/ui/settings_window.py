@@ -69,21 +69,58 @@ class SettingsWindow:
     
     def center_window(self):
         """居中显示窗口"""
-        self.window.update_idletasks()
-        
-        # 获取窗口大小
-        width = self.window.winfo_width()
-        height = self.window.winfo_height()
-        
-        # 获取屏幕大小
-        screen_width = self.window.winfo_screenwidth()
-        screen_height = self.window.winfo_screenheight()
-        
-        # 计算居中位置
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        
-        self.window.geometry(f"{width}x{height}+{x}+{y}")
+        # 检查窗口是否存在
+        if not self.window:
+            self.logger.error("窗口对象不存在，无法居中")
+            return
+
+        try:
+            # 更新窗口以获取准确的尺寸
+            self.window.update_idletasks()
+
+            # 获取窗口大小，如果获取失败则使用默认值
+            width = self.window.winfo_width()
+            height = self.window.winfo_height()
+
+            # 如果窗口尺寸无效，使用默认尺寸
+            if width <= 1 or height <= 1:
+                width = 800  # 默认宽度
+                height = 600  # 默认高度
+                self.logger.warning("窗口尺寸获取失败，使用默认尺寸")
+
+            # 获取屏幕大小
+            screen_width = self.window.winfo_screenwidth()
+            screen_height = self.window.winfo_screenheight()
+
+            # 验证屏幕尺寸
+            if screen_width <= 0 or screen_height <= 0:
+                self.logger.error("屏幕尺寸获取失败")
+                return
+
+            # 确保窗口不会超出屏幕边界
+            if width > screen_width:
+                width = int(screen_width * 0.9)
+            if height > screen_height:
+                height = int(screen_height * 0.9)
+
+            # 计算居中位置
+            x = max(0, (screen_width - width) // 2)
+            y = max(0, (screen_height - height) // 2)
+
+            # 设置窗口位置和大小
+            geometry = f"{width}x{height}+{x}+{y}"
+            self.window.geometry(geometry)
+
+            self.logger.debug(f"窗口居中设置: {geometry}")
+
+        except Exception as e:
+            self.logger.error(f"窗口居中失败: {e}")
+            # 如果居中失败，至少确保窗口可见
+            try:
+                if self.window:
+                    self.window.geometry("800x600+100+100")
+            except Exception as fallback_error:
+                self.logger.error(f"窗口位置设置完全失败: {fallback_error}")
     
     def setup_ui(self):
         """设置用户界面"""
@@ -604,13 +641,15 @@ class SettingsWindow:
                         success, message = loop.run_until_complete(test_async())
 
                         # 更新UI（在主线程中）
-                        self.window.after(0, lambda: self.update_proxy_test_result(success, message))
+                        if self.window:
+                            self.window.after(0, lambda: self.update_proxy_test_result(success, message))
                     finally:
                         loop.close()
 
                 except Exception as e:
                     # 更新UI（在主线程中）
-                    self.window.after(0, lambda: self.update_proxy_test_result(False, str(e)))
+                    if self.window:
+                        self.window.after(0, lambda: self.update_proxy_test_result(False, str(e)))
 
             # 启动测试线程
             test_thread = threading.Thread(target=test_connection, daemon=True)
