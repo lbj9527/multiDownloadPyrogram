@@ -38,12 +38,13 @@ class SettingsWindow:
         if self.window is not None:
             self.window.focus()
             return
-        
+
         # 创建设置窗口
         self.window = ctk.CTkToplevel(self.parent)
         self.window.title("设置")
-        self.window.geometry("600x500")
-        self.window.resizable(False, False)
+        self.window.geometry("800x700")
+        self.window.resizable(True, True)
+        self.window.minsize(700, 600)
         
         # 设置窗口图标
         try:
@@ -85,7 +86,7 @@ class SettingsWindow:
             # 如果窗口尺寸无效，使用默认尺寸
             if width <= 1 or height <= 1:
                 width = 800  # 默认宽度
-                height = 600  # 默认高度
+                height = 700  # 默认高度
                 self.logger.warning("窗口尺寸获取失败，使用默认尺寸")
 
             # 获取屏幕大小
@@ -126,18 +127,18 @@ class SettingsWindow:
         """设置用户界面"""
         # 创建主框架
         main_frame = ctk.CTkFrame(self.window)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
         # 创建选项卡
         self.tabview = ctk.CTkTabview(main_frame)
-        self.tabview.pack(fill="both", expand=True)
-        
+        self.tabview.pack(fill="both", expand=True, padx=5, pady=5)
+
         # 应用设置选项卡
         self.create_app_settings_tab()
-        
+
         # 下载设置选项卡
         self.create_download_settings_tab()
-        
+
         # 日志设置选项卡
         self.create_logging_settings_tab()
 
@@ -150,10 +151,14 @@ class SettingsWindow:
     def create_app_settings_tab(self):
         """创建应用设置选项卡"""
         app_tab = self.tabview.add("应用设置")
-        
+
+        # 创建滚动框架
+        app_scroll_frame = ctk.CTkScrollableFrame(app_tab)
+        app_scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
         # 主题设置
-        theme_frame = ctk.CTkFrame(app_tab)
-        theme_frame.pack(fill="x", padx=10, pady=10)
+        theme_frame = ctk.CTkFrame(app_scroll_frame)
+        theme_frame.pack(fill="x", padx=5, pady=5)
         
         theme_label = ctk.CTkLabel(theme_frame, text="主题设置", font=ctk.CTkFont(size=14, weight="bold"))
         theme_label.pack(pady=(10, 5))
@@ -170,8 +175,8 @@ class SettingsWindow:
         light_radio.pack(side="left", padx=20, pady=10)
         
         # 窗口设置
-        window_frame = ctk.CTkFrame(app_tab)
-        window_frame.pack(fill="x", padx=10, pady=10)
+        window_frame = ctk.CTkFrame(app_scroll_frame)
+        window_frame.pack(fill="x", padx=5, pady=5)
         
         window_label = ctk.CTkLabel(window_frame, text="窗口设置", font=ctk.CTkFont(size=14, weight="bold"))
         window_label.pack(pady=(10, 5))
@@ -193,8 +198,8 @@ class SettingsWindow:
         self.height_entry.grid(row=0, column=3, padx=5, pady=5)
         
         # 语言设置
-        lang_frame = ctk.CTkFrame(app_tab)
-        lang_frame.pack(fill="x", padx=10, pady=10)
+        lang_frame = ctk.CTkFrame(app_scroll_frame)
+        lang_frame.pack(fill="x", padx=5, pady=5)
         
         lang_label = ctk.CTkLabel(lang_frame, text="语言设置", font=ctk.CTkFont(size=14, weight="bold"))
         lang_label.pack(pady=(10, 5))
@@ -206,10 +211,14 @@ class SettingsWindow:
     def create_download_settings_tab(self):
         """创建下载设置选项卡"""
         download_tab = self.tabview.add("下载设置")
-        
+
+        # 创建滚动框架
+        download_scroll_frame = ctk.CTkScrollableFrame(download_tab)
+        download_scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
         # 默认路径
-        path_frame = ctk.CTkFrame(download_tab)
-        path_frame.pack(fill="x", padx=10, pady=10)
+        path_frame = ctk.CTkFrame(download_scroll_frame)
+        path_frame.pack(fill="x", padx=5, pady=5)
         
         path_label = ctk.CTkLabel(path_frame, text="默认下载路径", font=ctk.CTkFont(size=14, weight="bold"))
         path_label.pack(pady=(10, 5))
@@ -224,8 +233,8 @@ class SettingsWindow:
         browse_button.pack(side="right", padx=5, pady=5)
         
         # 并发设置
-        concurrent_frame = ctk.CTkFrame(download_tab)
-        concurrent_frame.pack(fill="x", padx=10, pady=10)
+        concurrent_frame = ctk.CTkFrame(download_scroll_frame)
+        concurrent_frame.pack(fill="x", padx=5, pady=5)
         
         concurrent_label = ctk.CTkLabel(concurrent_frame, text="并发设置", font=ctk.CTkFont(size=14, weight="bold"))
         concurrent_label.pack(pady=(10, 5))
@@ -246,8 +255,8 @@ class SettingsWindow:
         self.timeout_entry.grid(row=1, column=1, padx=5, pady=5)
         
         # 其他选项
-        options_frame = ctk.CTkFrame(download_tab)
-        options_frame.pack(fill="x", padx=10, pady=10)
+        options_frame = ctk.CTkFrame(download_scroll_frame)
+        options_frame.pack(fill="x", padx=5, pady=5)
         
         options_label = ctk.CTkLabel(options_frame, text="其他选项", font=ctk.CTkFont(size=14, weight="bold"))
         options_label.pack(pady=(10, 5))
@@ -259,10 +268,14 @@ class SettingsWindow:
     def create_logging_settings_tab(self):
         """创建日志设置选项卡"""
         logging_tab = self.tabview.add("日志设置")
-        
+
+        # 创建滚动框架
+        logging_scroll_frame = ctk.CTkScrollableFrame(logging_tab)
+        logging_scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
         # 日志级别
-        level_frame = ctk.CTkFrame(logging_tab)
-        level_frame.pack(fill="x", padx=10, pady=10)
+        level_frame = ctk.CTkFrame(logging_scroll_frame)
+        level_frame.pack(fill="x", padx=5, pady=5)
         
         level_label = ctk.CTkLabel(level_frame, text="日志级别", font=ctk.CTkFont(size=14, weight="bold"))
         level_label.pack(pady=(10, 5))
@@ -273,8 +286,8 @@ class SettingsWindow:
         level_combo.pack(pady=(0, 10))
         
         # 日志文件设置
-        file_frame = ctk.CTkFrame(logging_tab)
-        file_frame.pack(fill="x", padx=10, pady=10)
+        file_frame = ctk.CTkFrame(logging_scroll_frame)
+        file_frame.pack(fill="x", padx=5, pady=5)
         
         file_label = ctk.CTkLabel(file_frame, text="日志文件设置", font=ctk.CTkFont(size=14, weight="bold"))
         file_label.pack(pady=(10, 5))
@@ -295,8 +308,8 @@ class SettingsWindow:
         self.backup_count_entry.grid(row=1, column=1, padx=5, pady=5)
         
         # 控制台输出
-        console_frame = ctk.CTkFrame(logging_tab)
-        console_frame.pack(fill="x", padx=10, pady=10)
+        console_frame = ctk.CTkFrame(logging_scroll_frame)
+        console_frame.pack(fill="x", padx=5, pady=5)
         
         console_label = ctk.CTkLabel(console_frame, text="控制台输出", font=ctk.CTkFont(size=14, weight="bold"))
         console_label.pack(pady=(10, 5))
@@ -309,9 +322,13 @@ class SettingsWindow:
         """创建代理设置选项卡"""
         proxy_tab = self.tabview.add("代理设置")
 
+        # 创建滚动框架
+        proxy_scroll_frame = ctk.CTkScrollableFrame(proxy_tab)
+        proxy_scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
         # 代理启用设置
-        enable_frame = ctk.CTkFrame(proxy_tab)
-        enable_frame.pack(fill="x", padx=10, pady=10)
+        enable_frame = ctk.CTkFrame(proxy_scroll_frame)
+        enable_frame.pack(fill="x", padx=5, pady=5)
 
         enable_label = ctk.CTkLabel(enable_frame, text="代理设置", font=ctk.CTkFont(size=14, weight="bold"))
         enable_label.pack(pady=(10, 5))
@@ -323,8 +340,8 @@ class SettingsWindow:
         proxy_enable_check.pack(pady=(0, 10))
 
         # 代理类型设置
-        type_frame = ctk.CTkFrame(proxy_tab)
-        type_frame.pack(fill="x", padx=10, pady=10)
+        type_frame = ctk.CTkFrame(proxy_scroll_frame)
+        type_frame.pack(fill="x", padx=5, pady=5)
 
         type_label = ctk.CTkLabel(type_frame, text="代理类型", font=ctk.CTkFont(size=14, weight="bold"))
         type_label.pack(pady=(10, 5))
@@ -335,8 +352,8 @@ class SettingsWindow:
         proxy_type_combo.pack(pady=(0, 10))
 
         # 代理服务器设置
-        server_frame = ctk.CTkFrame(proxy_tab)
-        server_frame.pack(fill="x", padx=10, pady=10)
+        server_frame = ctk.CTkFrame(proxy_scroll_frame)
+        server_frame.pack(fill="x", padx=5, pady=5)
 
         server_label = ctk.CTkLabel(server_frame, text="代理服务器", font=ctk.CTkFont(size=14, weight="bold"))
         server_label.pack(pady=(10, 5))
@@ -360,8 +377,8 @@ class SettingsWindow:
         server_input_frame.grid_columnconfigure(1, weight=1)
 
         # 认证设置
-        auth_frame = ctk.CTkFrame(proxy_tab)
-        auth_frame.pack(fill="x", padx=10, pady=10)
+        auth_frame = ctk.CTkFrame(proxy_scroll_frame)
+        auth_frame.pack(fill="x", padx=5, pady=5)
 
         auth_label = ctk.CTkLabel(auth_frame, text="认证信息（可选）", font=ctk.CTkFont(size=14, weight="bold"))
         auth_label.pack(pady=(10, 5))
@@ -385,8 +402,8 @@ class SettingsWindow:
         auth_input_frame.grid_columnconfigure(1, weight=1)
 
         # 测试按钮
-        test_frame = ctk.CTkFrame(proxy_tab)
-        test_frame.pack(fill="x", padx=10, pady=10)
+        test_frame = ctk.CTkFrame(proxy_scroll_frame)
+        test_frame.pack(fill="x", padx=5, pady=5)
 
         test_label = ctk.CTkLabel(test_frame, text="连接测试", font=ctk.CTkFont(size=14, weight="bold"))
         test_label.pack(pady=(10, 5))
@@ -404,7 +421,7 @@ class SettingsWindow:
     def create_buttons(self):
         """创建按钮"""
         button_frame = ctk.CTkFrame(self.window)
-        button_frame.pack(fill="x", padx=20, pady=(0, 20))
+        button_frame.pack(fill="x", padx=10, pady=(5, 10))
         
         # 确定按钮
         ok_button = ctk.CTkButton(button_frame, text="确定", command=self.save_settings)
