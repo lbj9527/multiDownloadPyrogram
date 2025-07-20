@@ -103,7 +103,10 @@ class MainWindow:
         # 异步事件循环
         self.loop = None
         self.loop_thread = None
-        
+
+        # 延迟更新连接状态，确保所有组件都已初始化
+        self.root.after(1000, self.update_connection_status)
+
         self.logger.info("主窗口初始化完成")
     
     def setup_ui(self):
@@ -238,6 +241,9 @@ class MainWindow:
         
         # 定时更新状态
         self.update_status()
+
+        # 定时更新连接状态
+        self.schedule_connection_status_update()
     
     def on_event_received(self, event: BaseEvent):
         """处理接收到的事件"""
@@ -257,10 +263,15 @@ class MainWindow:
             if event.event_type == EventType.CONFIG_UPDATED:
                 self.reload_app_config()
                 self.update_status("配置已更新", "green")
+
+                # 如果是代理配置更新，通知客户端管理器重新检查连接
+                if hasattr(event, 'data') and event.data and event.data.get('config_type') == 'app_config':
+                    self._handle_proxy_config_change()
                 return
 
             # 更新状态栏
-            if event.event_type in [EventType.CLIENT_LOGIN_SUCCESS, EventType.CLIENT_DISCONNECTED]:
+            if event.event_type in [EventType.CLIENT_LOGIN_SUCCESS, EventType.CLIENT_DISCONNECTED, EventType.CLIENT_STATUS_CHANGED]:
+                self.logger.info(f"收到客户端状态事件: {event.event_type}, 更新连接状态")
                 self.update_connection_status()
 
             # 更新状态消息
@@ -294,18 +305,70 @@ class MainWindow:
             # 获取客户端连接状态
             if hasattr(self.client_config_frame, 'client_manager') and self.client_config_frame.client_manager:
                 enabled_clients = self.client_config_frame.client_manager.get_enabled_clients()
+                self.logger.info(f"更新连接状态 - 已启用客户端: {enabled_clients}")
+
                 if enabled_clients:
                     self.connection_indicator.configure(text_color="green")
                     self.connection_label.configure(text=f"已连接 ({len(enabled_clients)})")
+                    self.logger.info(f"连接状态更新为: 已连接 ({len(enabled_clients)})")
                 else:
+                    # 检查所有客户端状态进行调试
+                    all_status = {}
+                    for client_config in self.client_config_frame.client_manager.config.clients:
+                        status = self.client_config_frame.client_manager.client_status.get(client_config.session_name)
+                        all_status[client_config.session_name] = status
+                    self.logger.info(f"所有客户端状态: {all_status}")
+
                     self.connection_indicator.configure(text_color="red")
                     self.connection_label.configure(text="未连接")
             else:
+                self.logger.info("客户端管理器不存在或未初始化")
                 self.connection_indicator.configure(text_color="gray")
                 self.connection_label.configure(text="未配置")
         except Exception as e:
             self.logger.error(f"更新连接状态失败: {e}")
-    
+
+    def schedule_connection_status_update(self):
+        """定时更新连接状态"""
+        try:
+            # 更新连接状态
+            self.update_connection_status()
+
+            # 每5秒更新一次连接状态
+            if self.root:
+                self.root.after(5000, self.schedule_connection_status_update)
+        except Exception as e:
+            self.logger.error(f"定时更新连接状态失败: {e}")
+
+    def _handle_proxy_config_change(self):
+        """处理代理配置变更"""
+        try:
+            self.logger.info("检测到代理配置变更，重新检查客户端连接")
+
+            # 重新初始化代理配置
+            self._initialize_proxy_config()
+
+            # 通知客户端配置框架重新检查连接
+            if hasattr(self, 'client_config_frame') and self.client_config_frame:
+                # 在后台线程中执行连接检查
+                def check_connections():
+                    try:
+                        # 延迟一秒，确保代理配置已更新
+                        import time
+                        time.sleep(1)
+
+                        # 触发连接测试
+                        if hasattr(self.client_config_frame, 'test_connections'):
+                            self.client_config_frame.test_connections()
+                    except Exception as e:
+                        self.logger.error(f"代理配置变更后检查连接失败: {e}")
+
+                import threading
+                threading.Thread(target=check_connections, daemon=True).start()
+
+        except Exception as e:
+            self.logger.error(f"处理代理配置变更失败: {e}")
+
     def toggle_theme(self):
         """切换主题"""
         try:

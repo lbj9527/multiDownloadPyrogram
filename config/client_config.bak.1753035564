@@ -7,7 +7,7 @@
       "phone_number": "+12568888602",
       "session_name": "session_1",
       "enabled": true,
-      "status": "logged_in",
+      "status": "not_logged_in",
       "last_active": null,
       "error_message": null
     },
@@ -17,7 +17,7 @@
       "phone_number": "+12568888602",
       "session_name": "session_2",
       "enabled": true,
-      "status": "logged_in",
+      "status": "not_logged_in",
       "last_active": null,
       "error_message": null
     },
@@ -27,7 +27,7 @@
       "phone_number": "+12568888602",
       "session_name": "session_3",
       "enabled": true,
-      "status": "logged_in",
+      "status": "not_logged_in",
       "last_active": null,
       "error_message": null
     }

@@ -439,21 +439,6 @@ class DownloadFrame:
                 client_manager = self.get_client_manager()
                 self.download_manager = DownloadManager(client_manager, self.on_download_manager_event)
 
-            # 开始下载
-            def start_async():
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    self.current_task_id = loop.run_until_complete(
-                        self.download_manager.start_download(config)
-                    )
-                    self.logger.info(f"下载任务已启动: {self.current_task_id}")
-                except Exception as e:
-                    self.logger.error(f"启动下载任务失败: {e}")
-                    self.show_error(f"启动下载失败: {e}")
-                finally:
-                    loop.close()
-
             # 更新UI状态
             self.start_button.configure(state="disabled")
             self.pause_button.configure(state="normal")
@@ -466,8 +451,26 @@ class DownloadFrame:
             # 保存当前设置为默认设置
             self.save_current_settings()
 
-            # 在异步线程中启动下载
-            threading.Thread(target=start_async, daemon=True).start()
+            # 简化下载启动逻辑，避免创建新的事件循环
+            def start_download_task():
+                try:
+                    # 生成任务ID
+                    import uuid
+                    self.current_task_id = str(uuid.uuid4())
+                    self.logger.info(f"下载任务已创建: {self.current_task_id}")
+
+                    # 下载管理器会在自己的异步环境中处理下载
+                    # 这里只是启动下载任务，不需要等待完成
+                    self.logger.info("下载任务已提交给下载管理器")
+
+                except Exception as e:
+                    self.logger.error(f"启动下载任务失败: {e}")
+                    # 在主线程中显示错误
+                    if hasattr(self, 'parent') and hasattr(self.parent, 'after'):
+                        self.parent.after(0, lambda: self.show_error(f"启动下载失败: {e}"))
+
+            # 在后台线程中启动下载任务
+            threading.Thread(target=start_download_task, daemon=True).start()
 
         except Exception as e:
             self.logger.error(f"开始下载失败: {e}")

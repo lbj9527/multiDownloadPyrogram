@@ -8,6 +8,7 @@ import tkinter as tk
 import customtkinter as ctk
 import asyncio
 from typing import Optional, List
+from datetime import datetime
 
 from ..models.client_config import ClientConfig, ClientStatus, MultiClientConfig, AccountType
 from ..core.client_manager import ClientManager
@@ -157,34 +158,33 @@ class ClientConfigFrame:
         """创建操作按钮区域"""
         button_frame = ctk.CTkFrame(self.main_frame)
         button_frame.pack(fill="x", padx=5, pady=(5, 0))
-        
-        # 保存配置按钮
-        save_button = ctk.CTkButton(
-            button_frame,
-            text="保存配置",
-            command=self.save_config
-        )
-        save_button.pack(side="left", padx=10, pady=10)
-        
+
         # 测试连接按钮
-        test_button = ctk.CTkButton(
+        self.test_button = ctk.CTkButton(
             button_frame,
             text="测试连接",
             command=self.test_connections
         )
-        test_button.pack(side="left", padx=5, pady=10)
-        
-        # 状态刷新按钮
-        refresh_button = ctk.CTkButton(
-            button_frame,
-            text="刷新状态",
-            command=self.refresh_status
-        )
-        refresh_button.pack(side="right", padx=10, pady=10)
+        self.test_button.pack(side="left", padx=10, pady=10)
     
     def on_account_type_changed(self):
         """账户类型改变事件"""
-        self.update_client_status_display()
+        try:
+            # 更新显示
+            self.update_client_status_display()
+
+            # 自动保存账户类型变更
+            if self.current_config:
+                account_type = AccountType(self.account_type_var.get())
+                self.current_config.account_type = account_type
+
+                # 保存配置
+                if self.config_manager.save_client_config(self.current_config):
+                    self.logger.info(f"账户类型已更新为: {account_type.value}")
+                else:
+                    self.logger.error("保存账户类型变更失败")
+        except Exception as e:
+            self.logger.error(f"账户类型变更处理失败: {e}")
     
     def update_client_status_display(self):
         """更新客户端状态显示"""
@@ -459,19 +459,29 @@ class ClientConfigFrame:
 
                 # 重新创建客户端管理器
                 if self.client_manager:
-                    # 在后台线程中安全地关闭客户端
-                    def shutdown_async():
+                    # 直接创建新的客户端管理器，让旧的自然清理
+                    old_client_manager = self.client_manager
+                    self.client_manager = None
+
+                    # 在后台线程中安全地关闭旧客户端
+                    def shutdown_sync():
                         try:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            loop.run_until_complete(self.client_manager.shutdown_all_clients())
-                            loop.close()
+                            # 使用同步方式关闭客户端，避免事件循环冲突
+                            for session_name, client in old_client_manager.clients.items():
+                                try:
+                                    if client.is_connected:
+                                        # 直接停止客户端，不使用异步方法
+                                        client.stop()
+                                except Exception as e:
+                                    self.logger.warning(f"关闭客户端 {session_name} 失败: {e}")
+                            self.logger.info("旧客户端管理器已关闭")
                         except Exception as e:
                             self.logger.error(f"关闭客户端管理器失败: {e}")
 
                     import threading
-                    threading.Thread(target=shutdown_async, daemon=True).start()
+                    threading.Thread(target=shutdown_sync, daemon=True).start()
 
+                # 创建新的客户端管理器
                 self.client_manager = ClientManager(self.current_config, self.on_client_manager_event)
 
                 self.logger.info("API设置已保存并应用")
@@ -510,45 +520,7 @@ class ClientConfigFrame:
         except Exception as e:
             self.logger.error(f"加载配置失败: {e}")
 
-    def save_config(self):
-        """保存配置"""
-        try:
-            # 现在配置保存通过API设置窗口完成
-            # 这个方法主要用于保存当前配置状态
-            if self.current_config:
-                # 获取当前账户类型
-                account_type = AccountType(self.account_type_var.get())
-                self.current_config.account_type = account_type
 
-                # 保存配置
-                if self.config_manager.save_client_config(self.current_config):
-                    # 重新创建客户端管理器
-                    if self.client_manager:
-                        # 在后台线程中安全地关闭客户端
-                        def shutdown_async():
-                            try:
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                loop.run_until_complete(self.client_manager.shutdown_all_clients())
-                                loop.close()
-                            except Exception as e:
-                                self.logger.error(f"关闭客户端管理器失败: {e}")
-
-                        import threading
-                        threading.Thread(target=shutdown_async, daemon=True).start()
-
-                    self.client_manager = ClientManager(self.current_config, self.on_client_manager_event)
-
-                    self.show_success("配置保存成功")
-                    self.logger.info("客户端配置保存成功")
-                else:
-                    self.show_error("配置保存失败")
-            else:
-                self.show_error("没有可保存的配置，请先通过API设置配置客户端")
-
-        except Exception as e:
-            self.logger.error(f"保存配置失败: {e}")
-            self.show_error(f"保存配置失败: {e}")
 
     def login_client(self, client_index: int):
         """登录指定客户端"""
@@ -557,37 +529,38 @@ class ClientConfigFrame:
 
         client_config = self.current_config.clients[client_index]
 
-        # 在异步线程中执行登录
-        def login_async():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # 简化登录逻辑，避免创建新的事件循环
+        def login_sync():
             try:
                 # 首先确保客户端已启用
                 if not self.client_manager.enable_client(client_config.session_name):
                     self.logger.error(f"无法启用客户端 {client_config.session_name}")
                     return
 
-                # 执行登录
-                success = loop.run_until_complete(
-                    self.client_manager.login_client(client_config.session_name)
-                )
-                if success:
-                    self.logger.info(f"客户端 {client_config.session_name} 登录成功")
+                # 检查客户端是否已经登录
+                client = self.client_manager.get_client(client_config.session_name)
+                if client and client.is_connected:
+                    self.logger.info(f"客户端 {client_config.session_name} 已经登录")
                     # 在主线程中更新UI
-                    self.parent.after(0, self._update_ui_after_login_success)
-                else:
-                    self.logger.error(f"客户端 {client_config.session_name} 登录失败")
-                    # 在主线程中更新UI
+                    if hasattr(self, 'parent') and hasattr(self.parent, 'after'):
+                        self.parent.after(0, self._update_ui_after_login_success)
+                    return
+
+                # 对于需要手动登录的情况，提示用户
+                self.logger.info(f"客户端 {client_config.session_name} 需要手动登录，请检查会话文件或重新配置")
+
+                # 在主线程中更新UI
+                if hasattr(self, 'parent') and hasattr(self.parent, 'after'):
                     self.parent.after(0, self._update_ui_after_login_failure)
+
             except Exception as e:
                 self.logger.error(f"客户端登录异常: {e}")
                 # 在主线程中更新UI
-                self.parent.after(0, self._update_ui_after_login_failure)
-            finally:
-                loop.close()
+                if hasattr(self, 'parent') and hasattr(self.parent, 'after'):
+                    self.parent.after(0, self._update_ui_after_login_failure)
 
         import threading
-        threading.Thread(target=login_async, daemon=True).start()
+        threading.Thread(target=login_sync, daemon=True).start()
 
     def _update_ui_after_login_success(self):
         """登录成功后更新UI"""
@@ -616,62 +589,104 @@ class ClientConfigFrame:
 
         client_config = self.current_config.clients[client_index]
 
-        # 在异步线程中执行登出
-        def logout_async():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # 使用同步方式执行登出，避免事件循环冲突
+        def logout_sync():
             try:
-                success = loop.run_until_complete(
-                    self.client_manager.logout_client(client_config.session_name)
-                )
-                if success:
+                client = self.client_manager.get_client(client_config.session_name)
+                if client and client.is_connected:
+                    # 直接停止客户端连接
+                    client.stop()
                     self.logger.info(f"客户端 {client_config.session_name} 登出成功")
+
+                    # 更新客户端状态
+                    self.client_manager.client_status[client_config.session_name] = ClientStatus.NOT_LOGGED_IN
+
+                    # 在主线程中更新UI
+                    if hasattr(self, 'parent') and hasattr(self.parent, 'after'):
+                        self.parent.after(0, self.update_client_status_display)
                 else:
-                    self.logger.error(f"客户端 {client_config.session_name} 登出失败")
+                    self.logger.warning(f"客户端 {client_config.session_name} 未连接或不存在")
             except Exception as e:
                 self.logger.error(f"客户端登出异常: {e}")
-            finally:
-                loop.close()
 
         import threading
-        threading.Thread(target=logout_async, daemon=True).start()
+        threading.Thread(target=logout_sync, daemon=True).start()
 
 
 
     def test_connections(self):
-        """测试连接"""
+        """测试连接 - 使用真实的API调用测试连接状态"""
         if not self.client_manager:
             self.show_error("请先保存配置")
             return
 
-        def test_async():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+        # 禁用测试按钮，防止重复点击
+        self.test_button.configure(state="disabled", text="测试中...")
+
+        def test_real_connection():
+            """真实连接测试"""
             try:
+                results = {}  # 存储测试结果
+
                 for client_config in self.current_config.clients:
                     if client_config.enabled:
-                        success = loop.run_until_complete(
-                            self.client_manager.check_client_connection(client_config.session_name)
-                        )
-                        status = "连接正常" if success else "连接失败"
-                        self.logger.info(f"客户端 {client_config.session_name}: {status}")
+                        session_name = client_config.session_name
+
+                        # 首先使用快速的同步测试方法
+                        success, message = self.client_manager.test_client_connection_sync(session_name)
+
+                        # 如果快速测试显示连接正常，但没有用户信息，尝试API测试
+                        if success and "状态已登录" in message:
+                            self.logger.info(f"客户端 {session_name}: 尝试API验证...")
+                            api_success, api_message = self.client_manager.test_client_connection_with_api(session_name)
+                            if api_success:
+                                success, message = api_success, api_message
+                            else:
+                                # API测试失败，但基本连接正常，保持原结果
+                                self.logger.debug(f"客户端 {session_name}: API测试失败，但基本连接正常")
+
+                        results[session_name] = (success, message)
+
+                        # 记录测试结果
+                        self.logger.info(f"客户端 {session_name}: {message}")
+
+                # 在主线程中更新UI显示和恢复按钮
+                def update_ui():
+                    try:
+                        # 更新客户端状态显示
+                        self.update_client_status_display()
+
+                        # 恢复测试按钮
+                        self.test_button.configure(state="normal", text="测试连接")
+
+                        # 显示测试结果摘要
+                        success_count = sum(1 for success, _ in results.values() if success)
+                        total_count = len(results)
+
+                        if success_count == total_count and total_count > 0:
+                            self.show_success(f"所有客户端连接正常 ({success_count}/{total_count})")
+                        elif success_count > 0:
+                            self.show_info(f"部分客户端连接正常 ({success_count}/{total_count})")
+                        else:
+                            self.show_error(f"所有客户端连接失败 ({success_count}/{total_count})")
+
+                    except Exception as e:
+                        self.logger.error(f"更新UI失败: {e}")
+                        self.test_button.configure(state="normal", text="测试连接")
+
+                if hasattr(self, 'parent') and hasattr(self.parent, 'after'):
+                    self.parent.after(0, update_ui)
+
             except Exception as e:
                 self.logger.error(f"测试连接异常: {e}")
-            finally:
-                loop.close()
+                # 恢复按钮状态
+                if hasattr(self, 'parent') and hasattr(self.parent, 'after'):
+                    self.parent.after(0, lambda: self.test_button.configure(state="normal", text="测试连接"))
 
         import threading
-        threading.Thread(target=test_async, daemon=True).start()
+        threading.Thread(target=test_real_connection, daemon=True).start()
 
-    def refresh_status(self):
-        """刷新状态"""
-        if not self.client_manager:
-            return
 
-        for i, client_config in enumerate(self.current_config.clients):
-            status = self.client_manager.get_client_status(client_config.session_name)
-            if status:
-                self.update_client_status(i, status)
 
     def update_client_status(self, client_index: int, status: ClientStatus):
         """更新客户端状态显示"""
@@ -702,13 +717,15 @@ class ClientConfigFrame:
     def _update_ui_from_client_event(self, event: BaseEvent):
         """从客户端事件更新UI"""
         try:
-            if hasattr(event, 'client_name'):
+            if hasattr(event, 'client_name') and event.client_name:
                 # 查找对应的客户端
                 for i, client_config in enumerate(self.current_config.clients):
                     if client_config.session_name == event.client_name:
-                        if hasattr(event, 'client_status'):
-                            status = ClientStatus(event.client_status)
-                            self.update_client_status(i, status)
+                        # 从客户端管理器获取最新状态，而不是依赖事件中的状态
+                        if self.client_manager:
+                            current_status = self.client_manager.get_client_status(event.client_name)
+                            if current_status:
+                                self.update_client_status(i, current_status)
                         break
         except Exception as e:
             self.logger.error(f"更新客户端UI失败: {e}")
@@ -720,10 +737,15 @@ class ClientConfigFrame:
 
     def show_success(self, message: str):
         """显示成功消息"""
-        # 这里可以实现一个简单的消息提示
         self.logger.info(message)
+        # 可以在这里添加UI提示，比如状态栏消息或弹窗
 
     def show_error(self, message: str):
         """显示错误消息"""
-        # 这里可以实现一个简单的错误提示
         self.logger.error(message)
+        # 可以在这里添加UI提示，比如状态栏消息或弹窗
+
+    def show_info(self, message: str):
+        """显示信息消息"""
+        self.logger.info(message)
+        # 可以在这里添加UI提示，比如状态栏消息或弹窗

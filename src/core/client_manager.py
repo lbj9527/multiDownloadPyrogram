@@ -69,6 +69,12 @@ class ClientManager:
 
         # 检查并自动登录已有会话
         self._check_and_auto_login_sessions()
+
+        # 启动连接监控
+        self._start_connection_monitor()
+
+        # 添加客户端活跃时间更新机制
+        self._setup_activity_tracking()
     
     def _initialize_clients(self):
         """初始化所有启用的客户端"""
@@ -147,6 +153,254 @@ class ClientManager:
             if session_name in self.client_status:
                 self.client_status[session_name] = ClientStatus.ERROR
                 self._send_status_event(session_name, ClientStatus.ERROR, f"自动登录异常: {e}")
+
+    def _start_connection_monitor(self):
+        """启动连接监控"""
+        def monitor_connections():
+            import time
+            while True:
+                try:
+                    # 每60秒检查一次连接状态（减少频率）
+                    time.sleep(60)
+
+                    # 检查所有已登录的客户端
+                    for session_name, status in self.client_status.items():
+                        if status == ClientStatus.LOGGED_IN:
+                            # 直接在当前线程中检查，避免创建过多线程
+                            self._check_single_client_connection(session_name)
+
+                except Exception as e:
+                    self.logger.error(f"连接监控异常: {e}")
+
+        import threading
+        monitor_thread = threading.Thread(target=monitor_connections, daemon=True)
+        monitor_thread.start()
+        self.logger.info("连接监控已启动（每60秒检查一次）")
+
+    def _check_single_client_connection(self, session_name: str):
+        """检查单个客户端的连接状态"""
+        try:
+            if session_name not in self.clients:
+                return
+
+            client = self.clients[session_name]
+
+            # 使用简单的连接状态检查，避免创建新的事件循环
+            try:
+                if not client.is_connected:
+                    self._handle_connection_lost(session_name, "客户端未连接")
+                    return
+
+                # 检查最后活跃时间，如果超过5分钟没有活动，标记为可能断连
+                if session_name in self.last_active:
+                    last_active = self.last_active[session_name]
+                    now = datetime.now()
+                    if (now - last_active).total_seconds() > 300:  # 5分钟
+                        self.logger.warning(f"客户端 {session_name} 超过5分钟无活动，可能已断连")
+                        # 不立即标记为断连，只是记录警告
+                else:
+                    # 如果没有最后活跃时间记录，设置当前时间
+                    self.last_active[session_name] = datetime.now()
+
+            except Exception as e:
+                self._handle_connection_lost(session_name, str(e))
+
+        except Exception as e:
+            self.logger.error(f"检查客户端 {session_name} 连接状态失败: {e}")
+
+    def _handle_connection_lost(self, session_name: str, reason: str):
+        """处理连接丢失"""
+        self.logger.warning(f"客户端 {session_name} 连接丢失: {reason}")
+
+        # 更新状态
+        self.client_status[session_name] = ClientStatus.ERROR
+        self.client_errors[session_name] = f"连接丢失: {reason}"
+
+        # 发送断连事件
+        if self.event_callback:
+            event = create_client_event(
+                EventType.CLIENT_DISCONNECTED,
+                session_name,
+                f"客户端 {session_name} 连接丢失: {reason}",
+                data={"error": reason}
+            )
+            self.event_callback(event)
+
+    def _setup_activity_tracking(self):
+        """设置活跃时间跟踪"""
+        # 为每个客户端设置消息处理器来跟踪活跃时间
+        for session_name, client in self.clients.items():
+            try:
+                # 添加消息处理器来更新活跃时间
+                @client.on_message()
+                async def update_activity(client, message):
+                    # 更新对应客户端的活跃时间
+                    for name, c in self.clients.items():
+                        if c == client:
+                            self.last_active[name] = datetime.now()
+                            break
+
+            except Exception as e:
+                self.logger.debug(f"为客户端 {session_name} 设置活跃时间跟踪失败: {e}")
+
+    def update_client_activity(self, session_name: str):
+        """手动更新客户端活跃时间"""
+        if session_name in self.clients:
+            self.last_active[session_name] = datetime.now()
+            self.logger.debug(f"更新客户端 {session_name} 活跃时间")
+
+    def _send_status_event(self, session_name: str, status: ClientStatus, message: str):
+        """发送状态变更事件"""
+        if self.event_callback:
+            from ..models.events import create_client_event, EventType
+            event = create_client_event(
+                EventType.CLIENT_STATUS_CHANGED,
+                session_name,
+                message,
+                data={"status": status.value}
+            )
+            self.event_callback(event)
+
+    def test_client_connection_sync(self, session_name: str) -> tuple[bool, str]:
+        """
+        同步方式测试客户端连接状态
+
+        Args:
+            session_name: 会话名称
+
+        Returns:
+            tuple[bool, str]: (是否连接成功, 状态描述)
+        """
+        try:
+            if session_name not in self.clients:
+                return False, "客户端不存在"
+
+            client = self.clients[session_name]
+            current_status = self.client_status.get(session_name)
+
+            # 1. 首先检查基本连接状态
+            if not client.is_connected:
+                # 客户端未连接到Telegram服务器
+                if current_status == ClientStatus.LOGGED_IN:
+                    self.client_status[session_name] = ClientStatus.ERROR
+                    self._send_status_event(session_name, ClientStatus.ERROR, "连接已断开")
+                return False, "客户端未连接"
+
+            # 2. 检查客户端是否有缓存的用户信息
+            if hasattr(client, 'me') and client.me:
+                # 有用户信息，说明之前成功登录过
+                if current_status != ClientStatus.LOGGED_IN:
+                    self.client_status[session_name] = ClientStatus.LOGGED_IN
+                    self._send_status_event(session_name, ClientStatus.LOGGED_IN, "连接验证成功")
+
+                self.last_active[session_name] = datetime.now()
+                return True, f"连接正常 (用户: {client.me.first_name})"
+
+            # 3. 检查当前状态
+            if current_status == ClientStatus.LOGGED_IN:
+                # 状态显示已登录，但没有用户信息缓存
+                # 这种情况下认为连接正常，但可能需要重新获取用户信息
+                self.last_active[session_name] = datetime.now()
+                return True, "连接正常 (已登录状态)"
+
+            # 4. 其他状态检查
+            if current_status == ClientStatus.LOGGING_IN:
+                return True, "正在登录中"
+            elif current_status == ClientStatus.NOT_LOGGED_IN:
+                return False, "未登录"
+            elif current_status == ClientStatus.LOGIN_FAILED:
+                return False, "登录失败"
+            elif current_status == ClientStatus.ERROR:
+                return False, "连接错误"
+            else:
+                # 未知状态，但客户端显示已连接
+                return True, f"连接状态未知 (状态: {current_status})"
+
+        except Exception as e:
+            self.logger.error(f"测试客户端 {session_name} 连接失败: {e}")
+            if session_name in self.client_status:
+                self.client_status[session_name] = ClientStatus.ERROR
+            return False, f"测试异常: {e}"
+
+    def test_client_connection_with_api(self, session_name: str) -> tuple[bool, str]:
+        """
+        使用API调用测试客户端连接状态（更强的测试）
+
+        Args:
+            session_name: 会话名称
+
+        Returns:
+            tuple[bool, str]: (是否连接成功, 状态描述)
+        """
+        try:
+            if session_name not in self.clients:
+                return False, "客户端不存在"
+
+            client = self.clients[session_name]
+
+            # 检查基本连接状态
+            if not client.is_connected:
+                return False, "客户端未连接"
+
+            # 尝试真正的API调用测试
+            try:
+                import concurrent.futures
+                import asyncio
+
+                async def test_get_me():
+                    """异步测试get_me"""
+                    try:
+                        # 设置3秒超时，比较短的超时时间
+                        me = await asyncio.wait_for(client.get_me(), timeout=3.0)
+                        return me
+                    except asyncio.TimeoutError:
+                        return None
+                    except Exception as e:
+                        self.logger.debug(f"get_me调用失败: {e}")
+                        return None
+
+                # 尝试检测客户端的事件循环
+                client_loop = None
+
+                # 尝试多种方式获取客户端的事件循环
+                if hasattr(client, '_loop') and client._loop and not client._loop.is_closed():
+                    client_loop = client._loop
+                elif hasattr(client, 'loop') and client.loop and not client.loop.is_closed():
+                    client_loop = client.loop
+
+                if client_loop:
+                    try:
+                        # 在客户端的事件循环中执行测试
+                        future = asyncio.run_coroutine_threadsafe(test_get_me(), client_loop)
+                        me = future.result(timeout=4.0)  # 比内部超时稍长
+                        if me:
+                            # API调用成功
+                            self.client_status[session_name] = ClientStatus.LOGGED_IN
+                            self.last_active[session_name] = datetime.now()
+                            self._send_status_event(session_name, ClientStatus.LOGGED_IN, "API测试成功")
+                            return True, f"连接正常 (API验证: {me.first_name})"
+                        else:
+                            # API调用失败
+                            self.client_status[session_name] = ClientStatus.ERROR
+                            self._send_status_event(session_name, ClientStatus.ERROR, "API调用失败")
+                            return False, "连接失败 (API调用超时或失败)"
+                    except concurrent.futures.TimeoutError:
+                        self.client_status[session_name] = ClientStatus.ERROR
+                        self._send_status_event(session_name, ClientStatus.ERROR, "API测试超时")
+                        return False, "连接失败 (API测试超时)"
+                    except Exception as e:
+                        self.logger.debug(f"API测试异常: {e}")
+                        return False, f"API测试异常: {e}"
+                else:
+                    return False, "无法获取客户端事件循环"
+
+            except Exception as e:
+                self.logger.debug(f"API测试异常: {e}")
+                return False, f"API测试异常: {e}"
+
+        except Exception as e:
+            self.logger.error(f"API测试客户端 {session_name} 连接失败: {e}")
+            return False, f"测试异常: {e}"
 
     async def _try_auto_connect(self, client: Client, session_name: str) -> bool:
         """尝试自动连接客户端"""
@@ -769,32 +1023,31 @@ class ClientManager:
             bool: 连接是否正常
         """
         if session_name not in self.clients:
+            self.logger.debug(f"客户端 {session_name} 不存在")
             return False
 
         client = self.clients[session_name]
 
         try:
+            # 首先检查基本连接状态
             if not client.is_connected:
+                self.logger.debug(f"客户端 {session_name} 未连接")
+                self._handle_connection_lost(session_name, "客户端未连接")
                 return False
 
-            # 尝试获取用户信息来验证连接
-            await client.get_me()
-            self.last_active[session_name] = datetime.now()
-            return True
+            # 检查客户端状态和最后活跃时间
+            current_status = self.client_status.get(session_name)
+            if current_status == ClientStatus.LOGGED_IN:
+                # 更新最后活跃时间
+                self.last_active[session_name] = datetime.now()
+                return True
+            else:
+                self.logger.debug(f"客户端 {session_name} 状态不是已登录: {current_status}")
+                return False
 
         except Exception as e:
             self.logger.warning(f"客户端 {session_name} 连接检查失败: {e}")
-
-            # 发送断连事件
-            if self.event_callback:
-                event = create_client_event(
-                    EventType.CLIENT_DISCONNECTED,
-                    session_name,
-                    f"客户端 {session_name} 连接断开",
-                    data={"error": str(e)}
-                )
-                self.event_callback(event)
-
+            self._handle_connection_lost(session_name, str(e))
             return False
 
     async def reconnect_client(self, session_name: str) -> bool:
