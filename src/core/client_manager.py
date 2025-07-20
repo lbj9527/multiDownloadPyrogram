@@ -10,9 +10,9 @@ from typing import Dict, List, Optional, Callable, Any
 from pathlib import Path
 from datetime import datetime
 
-from pyrogram import Client
+from pyrogram import Client, compose
 from pyrogram.errors import (
-    FloodWait, AuthKeyUnregistered, Unauthorized, 
+    FloodWait, AuthKeyUnregistered, Unauthorized,
     PhoneNumberInvalid, PhoneCodeInvalid, PasswordHashInvalid,
     SessionPasswordNeeded, BadRequest
 )
@@ -46,6 +46,19 @@ class ClientManager:
         self.last_active: Dict[str, datetime] = {}
         # 客户端错误信息
         self.client_errors: Dict[str, str] = {}
+
+        # 顺序登录控制
+        self.login_queue: List[str] = []  # 登录队列
+        self.current_logging_client: Optional[str] = None  # 当前正在登录的客户端
+        self.login_lock = asyncio.Lock()  # 登录锁，确保顺序登录
+
+        # 多客户端compose管理
+        self.compose_task: Optional[asyncio.Task] = None  # compose任务
+        self.is_compose_running = False  # compose是否正在运行
+
+        # API调用频率监控（用于限流防护）
+        self.api_call_counts: Dict[str, int] = {}  # 每个客户端的API调用计数
+        self.api_call_timestamps: Dict[str, List[datetime]] = {}  # API调用时间戳
         
         # 会话文件目录
         self.session_dir = Path("sessions")
@@ -53,11 +66,111 @@ class ClientManager:
         
         # 初始化客户端
         self._initialize_clients()
+
+        # 检查并自动登录已有会话
+        self._check_and_auto_login_sessions()
     
     def _initialize_clients(self):
-        """初始化所有客户端"""
+        """初始化所有启用的客户端"""
         for client_config in self.config.clients:
-            self._create_client(client_config)
+            if client_config.enabled:
+                self._create_client(client_config)
+            else:
+                # 为禁用的客户端设置状态
+                self.client_status[client_config.session_name] = ClientStatus.DISABLED
+                self.logger.info(f"客户端 {client_config.session_name} 已禁用，跳过初始化")
+
+    def _check_and_auto_login_sessions(self):
+        """检查现有会话文件并自动登录"""
+        try:
+            for client_config in self.config.clients:
+                if not client_config.enabled:
+                    continue
+
+                session_name = client_config.session_name
+                session_file = self.session_dir / f"{session_name}.session"
+
+                # 检查会话文件是否存在
+                if session_file.exists():
+                    self.logger.info(f"发现会话文件: {session_file}")
+
+                    # 启动自动登录任务
+                    import threading
+                    threading.Thread(
+                        target=self._auto_login_with_session,
+                        args=(session_name,),
+                        daemon=True
+                    ).start()
+                else:
+                    self.logger.debug(f"会话文件不存在: {session_file}")
+
+        except Exception as e:
+            self.logger.error(f"检查会话文件失败: {e}")
+
+    def _auto_login_with_session(self, session_name: str):
+        """使用会话文件自动登录"""
+        try:
+            # 创建新的事件循环
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+            try:
+                # 检查客户端是否存在
+                if session_name not in self.clients:
+                    self.logger.warning(f"客户端 {session_name} 不存在，无法自动登录")
+                    return
+
+                client = self.clients[session_name]
+
+                # 设置登录状态
+                self.client_status[session_name] = ClientStatus.LOGGING_IN
+                self._send_status_event(session_name, ClientStatus.LOGGING_IN, "正在使用会话文件自动登录")
+
+                # 尝试连接
+                success = loop.run_until_complete(self._try_auto_connect(client, session_name))
+
+                if success:
+                    self.client_status[session_name] = ClientStatus.LOGGED_IN
+                    self.last_active[session_name] = datetime.now()
+                    self.logger.info(f"客户端 {session_name} 会话自动登录成功")
+                    self._send_status_event(session_name, ClientStatus.LOGGED_IN, "会话自动登录成功")
+                else:
+                    self.client_status[session_name] = ClientStatus.LOGIN_FAILED
+                    self.logger.warning(f"客户端 {session_name} 会话自动登录失败")
+                    self._send_status_event(session_name, ClientStatus.LOGIN_FAILED, "会话自动登录失败")
+
+            finally:
+                loop.close()
+
+        except Exception as e:
+            self.logger.error(f"自动登录异常: {e}")
+            if session_name in self.client_status:
+                self.client_status[session_name] = ClientStatus.ERROR
+                self._send_status_event(session_name, ClientStatus.ERROR, f"自动登录异常: {e}")
+
+    async def _try_auto_connect(self, client: Client, session_name: str) -> bool:
+        """尝试自动连接客户端"""
+        try:
+            # 启动客户端
+            await client.start()
+
+            # 检查是否成功连接
+            if client.is_connected:
+                # 获取用户信息验证登录状态
+                me = await client.get_me()
+                if me:
+                    self.logger.info(f"客户端 {session_name} 自动登录成功，用户: {me.username or me.first_name}")
+                    return True
+                else:
+                    self.logger.warning(f"客户端 {session_name} 连接成功但无法获取用户信息")
+                    return False
+            else:
+                self.logger.warning(f"客户端 {session_name} 连接失败")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"客户端 {session_name} 自动连接失败: {e}")
+            return False
     
     def _create_client(self, client_config: ClientConfig) -> Client:
         """
@@ -73,7 +186,7 @@ class ClientManager:
             # 获取代理配置
             proxy_config = get_pyrogram_proxy()
 
-            # 创建客户端实例
+            # 创建客户端实例 - 按照需求文档1.4.1节的完整参数
             client_kwargs = {
                 "name": client_config.session_name,
                 "api_id": client_config.api_id,
@@ -86,9 +199,11 @@ class ClientManager:
                 "ipv6": False,
                 "workers": min(32, os.cpu_count() + 4),
                 "workdir": str(self.session_dir),
-                "sleep_threshold": 10,
+                "sleep_threshold": 10,  # FloodWait自动重试的睡眠阈值
                 "hide_password": True,
-                "max_concurrent_transmissions": 1
+                "max_concurrent_transmissions": 1,  # 最大并发传输数
+                "in_memory": False,  # 使用文件存储
+                "takeout": False,  # 不使用takeout会话
             }
 
             # 如果有代理配置，添加到客户端参数中
@@ -132,23 +247,259 @@ class ClientManager:
                 self.event_callback(error_event)
             
             raise
-    
-    async def login_client(self, session_name: str, phone_code: Optional[str] = None, 
+
+    def enable_client(self, session_name: str) -> bool:
+        """
+        启用指定的客户端
+
+        Args:
+            session_name: 会话名称
+
+        Returns:
+            bool: 是否成功启用
+        """
+        try:
+            # 查找对应的客户端配置
+            client_config = None
+            for config in self.config.clients:
+                if config.session_name == session_name:
+                    client_config = config
+                    break
+
+            if not client_config:
+                self.logger.error(f"找不到客户端配置: {session_name}")
+                return False
+
+            # 如果客户端已经存在，直接返回
+            if session_name in self.clients:
+                self.logger.info(f"客户端 {session_name} 已经启用")
+                return True
+
+            # 创建客户端实例
+            self._create_client(client_config)
+            self.logger.info(f"客户端 {session_name} 已启用")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"启用客户端 {session_name} 失败: {e}")
+            return False
+
+    async def start_compose_clients(self, sequential: bool = False) -> bool:
+        """
+        使用Pyrogram compose()方法启动多客户端（按照需求文档1.4.3节）
+
+        Args:
+            sequential: 是否顺序运行客户端，默认False（并发运行）
+
+        Returns:
+            bool: 是否成功启动
+        """
+        try:
+            if self.is_compose_running:
+                self.logger.warning("compose已经在运行中")
+                return True
+
+            # 获取所有已登录的客户端
+            logged_in_clients = []
+            for session_name, client in self.clients.items():
+                if (session_name in self.client_status and
+                    self.client_status[session_name] == ClientStatus.LOGGED_IN):
+                    logged_in_clients.append(client)
+
+            if not logged_in_clients:
+                self.logger.warning("没有已登录的客户端可以启动compose")
+                return False
+
+            self.logger.info(f"启动compose，包含 {len(logged_in_clients)} 个客户端")
+
+            # 使用compose并发运行多个客户端
+            self.compose_task = asyncio.create_task(
+                compose(logged_in_clients, sequential=sequential)
+            )
+            self.is_compose_running = True
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"启动compose失败: {e}")
+            return False
+
+    async def stop_compose_clients(self) -> bool:
+        """
+        停止compose多客户端运行
+
+        Returns:
+            bool: 是否成功停止
+        """
+        try:
+            if not self.is_compose_running or not self.compose_task:
+                return True
+
+            self.logger.info("停止compose多客户端运行")
+
+            # 取消compose任务
+            self.compose_task.cancel()
+
+            try:
+                await self.compose_task
+            except asyncio.CancelledError:
+                pass
+
+            self.compose_task = None
+            self.is_compose_running = False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"停止compose失败: {e}")
+            return False
+
+    def _send_status_event(self, session_name: str, status: ClientStatus, message: str):
+        """发送客户端状态变化事件"""
+        try:
+            if self.event_callback:
+                from ..models.events import create_client_event, EventType
+                event = create_client_event(
+                    EventType.CLIENT_STATUS_CHANGED,
+                    session_name,
+                    message,
+                    client_status=status.value
+                )
+                self.event_callback(event)
+        except Exception as e:
+            self.logger.error(f"发送状态事件失败: {e}")
+
+    def can_disable_client(self, session_name: str) -> tuple[bool, str]:
+        """
+        检查是否可以禁用指定客户端（强制启用约束）
+
+        Args:
+            session_name: 会话名称
+
+        Returns:
+            tuple[bool, str]: (是否可以禁用, 错误信息)
+        """
+        # 统计当前启用的客户端数量
+        enabled_count = 0
+        for client_config in self.config.clients:
+            if client_config.enabled and client_config.session_name != session_name:
+                enabled_count += 1
+
+        # 如果禁用该客户端后没有启用的客户端，则不允许禁用
+        if enabled_count == 0:
+            return False, "系统要求至少保持一个客户端处于启用状态，无法禁用最后一个启用的客户端"
+
+        return True, ""
+
+    def get_enabled_clients_count(self) -> int:
+        """
+        获取当前启用的客户端数量
+
+        Returns:
+            int: 启用的客户端数量
+        """
+        count = 0
+        for client_config in self.config.clients:
+            if client_config.enabled:
+                count += 1
+        return count
+
+    def get_next_client_to_login(self) -> Optional[str]:
+        """
+        获取下一个应该登录的客户端（按照需求文档的顺序登录机制）
+
+        Returns:
+            Optional[str]: 下一个应该登录的客户端会话名称，如果没有则返回None
+        """
+        # 按照配置顺序查找第一个未登录且启用的客户端
+        for client_config in self.config.clients:
+            if (client_config.enabled and
+                client_config.session_name in self.client_status and
+                self.client_status[client_config.session_name] in [
+                    ClientStatus.NOT_LOGGED_IN,
+                    ClientStatus.LOGIN_FAILED,
+                    ClientStatus.ERROR
+                ]):
+                return client_config.session_name
+        return None
+
+    def can_login_client(self, session_name: str) -> bool:
+        """
+        检查指定客户端是否可以登录（顺序登录控制）
+
+        Args:
+            session_name: 会话名称
+
+        Returns:
+            bool: 是否可以登录
+        """
+        # 如果有客户端正在登录，则不能登录其他客户端
+        if self.current_logging_client is not None:
+            return False
+
+        # 检查是否轮到该客户端登录
+        next_client = self.get_next_client_to_login()
+        return next_client == session_name
+
+    def get_login_button_states(self) -> Dict[str, bool]:
+        """
+        获取所有客户端登录按钮的启用状态
+
+        Returns:
+            Dict[str, bool]: 客户端会话名称到按钮启用状态的映射
+        """
+        states = {}
+        next_client = self.get_next_client_to_login()
+
+        for client_config in self.config.clients:
+            session_name = client_config.session_name
+
+            if not client_config.enabled:
+                states[session_name] = False
+            elif self.current_logging_client is not None:
+                # 有客户端正在登录时，所有按钮都禁用
+                states[session_name] = False
+            elif session_name == next_client:
+                # 轮到该客户端登录
+                states[session_name] = True
+            else:
+                # 不是轮到该客户端登录
+                states[session_name] = False
+
+        return states
+
+    async def login_client(self, session_name: str, phone_code: Optional[str] = None,
                           password: Optional[str] = None) -> bool:
         """
-        登录指定客户端
-        
+        登录指定客户端（实现顺序登录机制）
+
         Args:
             session_name: 会话名称
             phone_code: 验证码（如果需要）
             password: 双重验证密码（如果需要）
-            
+
         Returns:
             bool: 登录是否成功
         """
-        if session_name not in self.clients:
-            self.logger.error(f"客户端 {session_name} 不存在")
-            return False
+        # 使用登录锁确保顺序登录
+        async with self.login_lock:
+            # 检查是否可以登录该客户端
+            if not self.can_login_client(session_name):
+                self.logger.error(f"客户端 {session_name} 当前不能登录，请按顺序登录")
+                return False
+
+            # 检查客户端是否存在
+            if session_name not in self.clients:
+                # 检查是否是禁用的客户端
+                if session_name in self.client_status and self.client_status[session_name] == ClientStatus.DISABLED:
+                    self.logger.error(f"客户端 {session_name} 已禁用，无法登录")
+                    return False
+                else:
+                    self.logger.error(f"客户端 {session_name} 不存在")
+                    return False
+
+            # 设置当前正在登录的客户端
+            self.current_logging_client = session_name
         
         client = self.clients[session_name]
         
@@ -190,10 +541,12 @@ class ClientManager:
                     )
                     self.event_callback(event)
                 
+                # 登录成功，清理登录状态
+                self.current_logging_client = None
                 return True
             else:
                 raise Exception("无法获取用户信息")
-                
+
         except SessionPasswordNeeded:
             # 需要双重验证密码
             self.logger.warning(f"客户端 {session_name} 需要双重验证密码")
@@ -256,7 +609,11 @@ class ClientManager:
         """处理登录错误"""
         self.client_status[session_name] = ClientStatus.LOGIN_FAILED
         self.client_errors[session_name] = error_msg
-        
+
+        # 清理登录状态
+        if self.current_logging_client == session_name:
+            self.current_logging_client = None
+
         # 发送登录失败事件
         if self.event_callback:
             event = create_client_event(
@@ -480,6 +837,79 @@ class ClientManager:
         except Exception as e:
             self.logger.error(f"客户端 {session_name} 重连失败: {e}")
             return False
+
+    def track_api_call(self, session_name: str):
+        """
+        跟踪API调用（用于限流防护）
+
+        Args:
+            session_name: 会话名称
+        """
+        now = datetime.now()
+
+        # 初始化计数器
+        if session_name not in self.api_call_counts:
+            self.api_call_counts[session_name] = 0
+            self.api_call_timestamps[session_name] = []
+
+        # 增加调用计数
+        self.api_call_counts[session_name] += 1
+        self.api_call_timestamps[session_name].append(now)
+
+        # 清理1分钟前的时间戳
+        one_minute_ago = now.timestamp() - 60
+        self.api_call_timestamps[session_name] = [
+            ts for ts in self.api_call_timestamps[session_name]
+            if ts.timestamp() > one_minute_ago
+        ]
+
+    def get_api_call_rate(self, session_name: str) -> int:
+        """
+        获取指定客户端的API调用频率（每分钟调用次数）
+
+        Args:
+            session_name: 会话名称
+
+        Returns:
+            int: 每分钟API调用次数
+        """
+        if session_name not in self.api_call_timestamps:
+            return 0
+
+        return len(self.api_call_timestamps[session_name])
+
+    def is_approaching_rate_limit(self, session_name: str, threshold: int = 20) -> bool:
+        """
+        检查是否接近API调用限制
+
+        Args:
+            session_name: 会话名称
+            threshold: 阈值（每分钟调用次数）
+
+        Returns:
+            bool: 是否接近限制
+        """
+        return self.get_api_call_rate(session_name) >= threshold
+
+    def get_least_used_client(self) -> Optional[str]:
+        """
+        获取API调用最少的客户端（用于负载均衡）
+
+        Returns:
+            Optional[str]: 最少使用的客户端会话名称
+        """
+        min_calls = float('inf')
+        least_used_client = None
+
+        for session_name in self.clients:
+            if (session_name in self.client_status and
+                self.client_status[session_name] == ClientStatus.LOGGED_IN):
+                calls = self.get_api_call_rate(session_name)
+                if calls < min_calls:
+                    min_calls = calls
+                    least_used_client = session_name
+
+        return least_used_client
 
     async def shutdown_all_clients(self):
         """关闭所有客户端"""

@@ -36,7 +36,11 @@ class SettingsWindow:
     def show(self):
         """显示设置窗口"""
         if self.window is not None:
-            self.window.focus()
+            # 如果窗口已存在，将其置顶并获得焦点
+            self.window.lift()
+            self.window.focus_force()
+            self.window.attributes('-topmost', True)
+            self.window.after(100, lambda: self.window.attributes('-topmost', False))
             return
 
         # 创建设置窗口
@@ -45,31 +49,39 @@ class SettingsWindow:
         self.window.geometry("800x700")
         self.window.resizable(True, True)
         self.window.minsize(700, 600)
-        
+
         # 设置窗口图标
         try:
             self.window.iconbitmap("assets/icon.ico")
         except:
             pass
-        
+
         # 窗口关闭事件
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
-        
+
         # 创建界面
         self.setup_ui()
-        
+
         # 加载当前设置
         self.load_settings()
-        
+
         # 使窗口模态
         self.window.transient(self.parent)
         self.window.grab_set()
-        
+
         # 居中显示
         self.center_window()
+
+        # 设置窗口置顶和焦点
+        self.window.lift()
+        self.window.focus_force()
+        self.window.attributes('-topmost', True)
+
+        # 短暂置顶后恢复正常状态，但保持在前台
+        self.window.after(200, lambda: self.window.attributes('-topmost', False))
     
     def center_window(self):
-        """居中显示窗口"""
+        """居中显示窗口（相对于父窗口）"""
         # 检查窗口是否存在
         if not self.window:
             self.logger.error("窗口对象不存在，无法居中")
@@ -79,47 +91,69 @@ class SettingsWindow:
             # 更新窗口以获取准确的尺寸
             self.window.update_idletasks()
 
-            # 获取窗口大小，如果获取失败则使用默认值
-            width = self.window.winfo_width()
-            height = self.window.winfo_height()
+            # 获取设置窗口大小
+            dialog_width = self.window.winfo_width()
+            dialog_height = self.window.winfo_height()
 
             # 如果窗口尺寸无效，使用默认尺寸
-            if width <= 1 or height <= 1:
-                width = 800  # 默认宽度
-                height = 700  # 默认高度
-                self.logger.warning("窗口尺寸获取失败，使用默认尺寸")
+            if dialog_width <= 1 or dialog_height <= 1:
+                dialog_width = 800  # 默认宽度
+                dialog_height = 700  # 默认高度
+                self.logger.warning("设置窗口尺寸获取失败，使用默认尺寸")
 
-            # 获取屏幕大小
+            # 获取父窗口的位置和大小
+            try:
+                self.parent.update_idletasks()
+                parent_x = self.parent.winfo_x()
+                parent_y = self.parent.winfo_y()
+                parent_width = self.parent.winfo_width()
+                parent_height = self.parent.winfo_height()
+
+                # 验证父窗口信息
+                if parent_width <= 1 or parent_height <= 1:
+                    raise ValueError("父窗口尺寸无效")
+
+            except Exception as parent_error:
+                self.logger.warning(f"获取父窗口信息失败: {parent_error}，使用屏幕居中")
+                # 如果无法获取父窗口信息，则使用屏幕居中
+                screen_width = self.window.winfo_screenwidth()
+                screen_height = self.window.winfo_screenheight()
+                parent_x = 0
+                parent_y = 0
+                parent_width = screen_width
+                parent_height = screen_height
+
+            # 计算相对于父窗口的居中位置
+            x = parent_x + (parent_width - dialog_width) // 2
+            y = parent_y + (parent_height - dialog_height) // 2
+
+            # 获取屏幕大小，确保窗口不会超出屏幕边界
             screen_width = self.window.winfo_screenwidth()
             screen_height = self.window.winfo_screenheight()
 
-            # 验证屏幕尺寸
-            if screen_width <= 0 or screen_height <= 0:
-                self.logger.error("屏幕尺寸获取失败")
-                return
+            # 调整位置，确保窗口完全在屏幕内
+            if x < 0:
+                x = 10
+            elif x + dialog_width > screen_width:
+                x = screen_width - dialog_width - 10
 
-            # 确保窗口不会超出屏幕边界
-            if width > screen_width:
-                width = int(screen_width * 0.9)
-            if height > screen_height:
-                height = int(screen_height * 0.9)
-
-            # 计算居中位置
-            x = max(0, (screen_width - width) // 2)
-            y = max(0, (screen_height - height) // 2)
+            if y < 0:
+                y = 10
+            elif y + dialog_height > screen_height:
+                y = screen_height - dialog_height - 10
 
             # 设置窗口位置和大小
-            geometry = f"{width}x{height}+{x}+{y}"
+            geometry = f"{dialog_width}x{dialog_height}+{x}+{y}"
             self.window.geometry(geometry)
 
-            self.logger.debug(f"窗口居中设置: {geometry}")
+            self.logger.debug(f"设置窗口居中: {geometry} (相对于父窗口 {parent_x},{parent_y} {parent_width}x{parent_height})")
 
         except Exception as e:
             self.logger.error(f"窗口居中失败: {e}")
             # 如果居中失败，至少确保窗口可见
             try:
                 if self.window:
-                    self.window.geometry("800x600+100+100")
+                    self.window.geometry("800x700+100+100")
             except Exception as fallback_error:
                 self.logger.error(f"窗口位置设置完全失败: {fallback_error}")
     

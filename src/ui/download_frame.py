@@ -222,13 +222,22 @@ class DownloadFrame:
         # 最大文件大小
         max_size_label = ctk.CTkLabel(advanced_frame, text="最大文件大小(MB):")
         max_size_label.pack(pady=(5, 0))
-        
+
         self.max_size_entry = ctk.CTkEntry(
             advanced_frame,
-            placeholder_text="留空表示无限制",
+            placeholder_text="留空表示无限制（最大50GB）",
             width=150
         )
         self.max_size_entry.pack(pady=2)
+
+        # 添加文件大小限制提示
+        size_hint_label = ctk.CTkLabel(
+            advanced_frame,
+            text="提示：最大支持50GB（51200MB）",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        )
+        size_hint_label.pack(pady=(0, 5))
     
     def create_progress_section(self):
         """创建进度显示区域"""
@@ -359,10 +368,13 @@ class DownloadFrame:
             if default_settings.get("message_count"):
                 self.count_entry.insert(0, str(default_settings["message_count"]))
 
-            # 加载应用配置中的下载路径
-            app_config = self.config_manager.load_app_config()
-            default_path = app_config.get("download", {}).get("default_path", "./downloads")
-            self.path_entry.insert(0, default_path)
+            # 加载下载路径（优先使用下载配置中的路径）
+            download_path = default_settings.get("download_path")
+            if not download_path:
+                # 如果下载配置中没有路径，则使用应用配置中的路径
+                app_config = self.config_manager.load_app_config()
+                download_path = app_config.get("download", {}).get("default_path", "./downloads")
+            self.path_entry.insert(0, download_path)
 
             # 设置媒体类型
             media_types = default_settings.get("media_types", [])
@@ -451,6 +463,9 @@ class DownloadFrame:
             channel_id = config.channel_id
             self.config_manager.add_recent_channel(channel_id)
 
+            # 保存当前设置为默认设置
+            self.save_current_settings()
+
             # 在异步线程中启动下载
             threading.Thread(target=start_async, daemon=True).start()
 
@@ -497,6 +512,41 @@ class DownloadFrame:
 
         except Exception as e:
             self.logger.error(f"清空配置失败: {e}")
+
+    def save_current_settings(self):
+        """保存当前设置为默认设置"""
+        try:
+            # 获取当前设置
+            settings = {
+                "start_message_id": int(self.start_id_entry.get().strip() or "1"),
+                "message_count": int(self.count_entry.get().strip() or "100"),
+                "download_path": self.path_entry.get().strip() or "./downloads",
+                "include_media": self.include_media_var.get(),
+                "include_text": self.include_text_var.get(),
+                "media_types": [
+                    media_type.value for media_type, var in self.media_type_vars.items()
+                    if var.get()
+                ],
+                "max_file_size": None
+            }
+
+            # 处理最大文件大小
+            max_size_text = self.max_size_entry.get().strip()
+            if max_size_text:
+                try:
+                    settings["max_file_size"] = int(max_size_text)
+                except ValueError:
+                    pass  # 忽略无效的文件大小
+
+            # 保存设置
+            success = self.config_manager.save_download_settings(settings)
+            if success:
+                self.logger.info("下载设置已保存")
+            else:
+                self.logger.warning("保存下载设置失败")
+
+        except Exception as e:
+            self.logger.error(f"保存当前设置失败: {e}")
 
     def open_download_folder(self):
         """打开下载文件夹"""
@@ -569,10 +619,17 @@ class DownloadFrame:
             max_size_text = self.max_size_entry.get().strip()
             if max_size_text:
                 try:
-                    max_size = float(max_size_text)
-                    if max_size <= 0:
+                    max_size_mb = float(max_size_text)
+                    if max_size_mb <= 0:
                         self.show_error("最大文件大小必须大于0")
                         return False
+
+                    # 检查是否超过50GB限制（51200MB）
+                    max_allowed_mb = 50 * 1024  # 50GB = 51200MB
+                    if max_size_mb > max_allowed_mb:
+                        self.show_error(f"最大文件大小不能超过50GB（{max_allowed_mb}MB），您输入了{max_size_mb:.1f}MB")
+                        return False
+
                 except ValueError:
                     self.show_error("最大文件大小必须为数字")
                     return False
@@ -603,7 +660,20 @@ class DownloadFrame:
             max_size = None
             max_size_text = self.max_size_entry.get().strip()
             if max_size_text:
-                max_size = int(float(max_size_text) * 1024 * 1024)  # 转换为字节
+                try:
+                    max_size_mb = float(max_size_text)
+                    max_size = int(max_size_mb * 1024 * 1024)  # 转换为字节
+
+                    # 检查是否超过50GB限制
+                    max_allowed_gb = 50
+                    max_allowed_bytes = max_allowed_gb * 1024 * 1024 * 1024
+                    if max_size > max_allowed_bytes:
+                        self.show_error(f"最大文件大小不能超过{max_allowed_gb}GB（您输入了{max_size_mb:.1f}MB）")
+                        return None
+
+                except ValueError:
+                    self.show_error("最大文件大小必须为有效数字")
+                    return None
 
             # 创建配置对象
             config = DownloadConfig(
@@ -619,6 +689,15 @@ class DownloadFrame:
 
             return config
 
+        except ValueError as e:
+            # 处理Pydantic验证错误
+            error_msg = str(e)
+            if "最大文件大小不能超过" in error_msg:
+                self.show_error("文件大小超出限制：最大支持50GB，请输入较小的值")
+            else:
+                self.show_error(f"配置验证失败: {error_msg}")
+            self.logger.error(f"配置验证失败: {e}")
+            return None
         except Exception as e:
             self.logger.error(f"创建下载配置失败: {e}")
             self.show_error(f"创建下载配置失败: {e}")

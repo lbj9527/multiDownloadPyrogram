@@ -107,6 +107,7 @@ class ConfigManager:
                 "default_settings": {
                     "start_message_id": 1,
                     "message_count": 100,
+                    "download_path": "./downloads",
                     "include_media": True,
                     "include_text": True,
                     "media_types": ["photo", "video", "document", "audio"],
@@ -301,6 +302,61 @@ class ConfigManager:
         """获取最近使用的频道列表"""
         config = self.load_download_config()
         return config.get("recent_channels", [])
+
+    def save_download_settings(self, settings: Dict[str, Any]) -> bool:
+        """
+        保存下载设置到配置文件
+
+        Args:
+            settings: 下载设置字典
+
+        Returns:
+            bool: 保存是否成功
+        """
+        try:
+            config = self.load_download_config()
+
+            # 更新默认设置
+            if "default_settings" not in config:
+                config["default_settings"] = {}
+
+            config["default_settings"].update(settings)
+
+            return self.save_download_config(config)
+
+        except Exception as e:
+            self.logger.error(f"保存下载设置失败: {e}")
+            return False
+
+    def get_download_settings(self) -> Dict[str, Any]:
+        """
+        获取下载设置
+
+        Returns:
+            Dict[str, Any]: 下载设置字典
+        """
+        try:
+            config = self.load_download_config()
+            return config.get("default_settings", {
+                "start_message_id": 1,
+                "message_count": 100,
+                "download_path": "./downloads",
+                "include_media": True,
+                "include_text": True,
+                "media_types": ["photo", "video", "document", "audio"],
+                "max_file_size": None
+            })
+        except Exception as e:
+            self.logger.error(f"获取下载设置失败: {e}")
+            return {
+                "start_message_id": 1,
+                "message_count": 100,
+                "download_path": "./downloads",
+                "include_media": True,
+                "include_text": True,
+                "media_types": ["photo", "video", "document", "audio"],
+                "max_file_size": None
+            }
     
     def _merge_configs(self, default: Dict[str, Any], user: Dict[str, Any]) -> Dict[str, Any]:
         """

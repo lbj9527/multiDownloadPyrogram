@@ -44,6 +44,15 @@ class DownloadManager:
         self.download_queue: List[DownloadTask] = []
         # 是否正在下载
         self.is_downloading = False
+
+        # 多客户端并发下载支持（按照需求文档1.3节）
+        self.active_downloads: Dict[str, str] = {}  # 客户端 -> 任务ID映射
+        self.max_concurrent_downloads = 4  # 最大并发下载数
+        self.download_lock = asyncio.Lock()
+
+        # 客户端负载均衡
+        self.client_download_counts: Dict[str, int] = {}  # 客户端下载计数
+        self.client_last_used: Dict[str, datetime] = {}  # 客户端最后使用时间
         
         # 下载统计
         self.download_stats = {
@@ -130,45 +139,133 @@ class DownloadManager:
             
         except Exception as e:
             self.logger.error(f"配置验证失败: {e}")
-            return False
-    
+            # 如果验证过程出现异常，允许继续下载，在实际下载时再处理
+            self.logger.warning("验证过程出现异常，将在下载时重新验证")
+            return True
+
+    def get_available_clients_for_download(self) -> List[str]:
+        """
+        获取可用于下载的客户端列表（多客户端负载均衡）
+
+        Returns:
+            List[str]: 可用客户端会话名称列表
+        """
+        available_clients = []
+
+        # 获取所有已登录的客户端
+        for session_name, status in self.client_manager.client_status.items():
+            if status.value == "logged_in":  # 使用字符串比较避免导入问题
+                # 检查是否接近API限制
+                if not self.client_manager.is_approaching_rate_limit(session_name):
+                    # 检查是否已在下载
+                    if session_name not in self.active_downloads:
+                        available_clients.append(session_name)
+
+        return available_clients
+
+    def select_optimal_client(self, available_clients: List[str]) -> Optional[str]:
+        """
+        选择最优客户端（负载均衡算法）
+
+        Args:
+            available_clients: 可用客户端列表
+
+        Returns:
+            Optional[str]: 最优客户端会话名称
+        """
+        if not available_clients:
+            return None
+
+        # 优先选择使用次数最少的客户端
+        min_count = float('inf')
+        best_client = None
+
+        for client_name in available_clients:
+            count = self.client_download_counts.get(client_name, 0)
+            if count < min_count:
+                min_count = count
+                best_client = client_name
+
+        return best_client
+
+    def assign_client_to_task(self, task_id: str) -> Optional[str]:
+        """
+        为任务分配客户端
+
+        Args:
+            task_id: 任务ID
+
+        Returns:
+            Optional[str]: 分配的客户端会话名称
+        """
+        available_clients = self.get_available_clients_for_download()
+        optimal_client = self.select_optimal_client(available_clients)
+
+        if optimal_client:
+            # 分配客户端
+            self.active_downloads[optimal_client] = task_id
+            self.client_download_counts[optimal_client] = self.client_download_counts.get(optimal_client, 0) + 1
+            self.client_last_used[optimal_client] = datetime.now()
+
+            self.logger.info(f"任务 {task_id} 分配给客户端 {optimal_client}")
+            return optimal_client
+
+        return None
+
+    def release_client_from_task(self, client_name: str):
+        """
+        释放客户端分配
+
+        Args:
+            client_name: 客户端会话名称
+        """
+        if client_name in self.active_downloads:
+            task_id = self.active_downloads[client_name]
+            del self.active_downloads[client_name]
+            self.logger.debug(f"释放客户端 {client_name} 的任务分配 {task_id}")
+
     async def _execute_download(self, task: DownloadTask):
         """执行下载任务"""
         try:
             task.progress.status = DownloadStatus.DOWNLOADING
             task.started_at = datetime.now().isoformat()
             
-            # 获取可用客户端
-            enabled_clients = self.client_manager.get_enabled_clients()
-            if not enabled_clients:
-                raise Exception("没有可用的客户端")
-            
+            # 使用改进的多客户端分配策略
+            available_clients = self.get_available_clients_for_download()
+            if not available_clients:
+                raise Exception("没有可用的客户端进行下载")
+
+            # 为任务分配最优客户端
+            assigned_client = self.assign_client_to_task(task.task_id)
+            if not assigned_client:
+                raise Exception("无法分配客户端")
+
             # 获取消息列表
-            messages = await self._get_messages(task, enabled_clients[0])
+            messages = await self._get_messages(task, assigned_client)
             if not messages:
                 raise Exception("未找到消息")
-            
+
             task.progress.total_messages = len(messages)
-            
-            # 分配任务给多个客户端
-            client_tasks = self._distribute_tasks(messages, enabled_clients)
+
+            # 智能分配任务给多个客户端（按照需求文档的负载均衡）
+            client_tasks = self._distribute_tasks_optimally(messages, available_clients)
             task.client_assignments = {client: [msg.id for msg in msgs] for client, msgs in client_tasks.items()}
-            
+
             # 并发下载
             download_tasks = []
             for client_name, client_messages in client_tasks.items():
                 download_tasks.append(
                     self._download_messages_with_client(task, client_name, client_messages)
                 )
-            
+
             # 等待所有下载任务完成
             await asyncio.gather(*download_tasks, return_exceptions=True)
-            
+
             # 检查下载结果
             if task.progress.downloaded_messages == task.progress.total_messages:
                 task.progress.status = DownloadStatus.COMPLETED
                 task.completed_at = datetime.now().isoformat()
-                
+
                 # 发送完成事件
                 if self.event_callback:
                     event = create_download_event(
@@ -198,6 +295,15 @@ class DownloadManager:
                     data={"error": str(e)}
                 )
                 self.event_callback(event)
+
+        finally:
+            # 释放客户端分配
+            if assigned_client:
+                self.release_client_from_task(assigned_client)
+
+            # 清理任务
+            if task.task_id in self.current_tasks:
+                del self.current_tasks[task.task_id]
     
     async def _get_messages(self, task: DownloadTask, client_name: str) -> List[Message]:
         """获取消息列表"""
@@ -549,3 +655,99 @@ class DownloadManager:
     def get_completed_tasks(self) -> List[DownloadTask]:
         """获取已完成任务列表"""
         return [task for task in self.current_tasks.values() if task.is_completed()]
+
+    def _distribute_tasks_optimally(self, messages: List[Message], available_clients: List[str]) -> Dict[str, List[Message]]:
+        """
+        优化的任务分配算法（按照需求文档的负载均衡策略）
+
+        Args:
+            messages: 消息列表
+            available_clients: 可用客户端列表
+
+        Returns:
+            Dict[str, List[Message]]: 客户端到消息列表的映射
+        """
+        if not available_clients:
+            return {}
+
+        # 按文件大小排序消息（大文件优先分配给负载较轻的客户端）
+        sorted_messages = sorted(messages, key=lambda msg: self._get_message_size(msg), reverse=True)
+
+        # 初始化客户端任务分配
+        client_tasks = {client: [] for client in available_clients}
+        client_loads = {client: 0 for client in available_clients}  # 客户端负载（文件大小总和）
+
+        # 使用贪心算法分配任务
+        for message in sorted_messages:
+            # 选择当前负载最轻的客户端
+            min_load_client = min(client_loads.keys(), key=lambda c: client_loads[c])
+
+            # 分配消息给该客户端
+            client_tasks[min_load_client].append(message)
+            client_loads[min_load_client] += self._get_message_size(message)
+
+        # 记录分配结果
+        for client, msgs in client_tasks.items():
+            if msgs:
+                total_size = sum(self._get_message_size(msg) for msg in msgs)
+                self.logger.info(f"客户端 {client} 分配 {len(msgs)} 个消息，总大小: {total_size / 1024 / 1024:.2f} MB")
+
+        return client_tasks
+
+    def _get_message_size(self, message: Message) -> int:
+        """
+        获取消息的估计大小
+
+        Args:
+            message: 消息对象
+
+        Returns:
+            int: 消息大小（字节）
+        """
+        if message.media:
+            if hasattr(message.media, 'file_size') and message.media.file_size:
+                return message.media.file_size
+            elif message.photo:
+                return 1024 * 1024  # 估计1MB
+            elif message.video:
+                return 10 * 1024 * 1024  # 估计10MB
+            elif message.document:
+                return 5 * 1024 * 1024  # 估计5MB
+            elif message.audio or message.voice:
+                return 3 * 1024 * 1024  # 估计3MB
+
+        # 文本消息
+        return len(message.text or "") * 2  # 估计每个字符2字节
+
+    def get_download_statistics(self) -> Dict[str, Any]:
+        """
+        获取多客户端下载统计信息
+
+        Returns:
+            Dict[str, Any]: 统计信息
+        """
+        total_tasks = len(self.current_tasks)
+        active_tasks = len(self.get_active_tasks())
+        completed_tasks = len(self.get_completed_tasks())
+        failed_tasks = sum(1 for task in self.current_tasks.values()
+                          if task.progress.status == DownloadStatus.FAILED)
+
+        # 客户端使用统计
+        client_stats = {}
+        for client_name, count in self.client_download_counts.items():
+            client_stats[client_name] = {
+                'download_count': count,
+                'last_used': self.client_last_used.get(client_name),
+                'currently_active': client_name in self.active_downloads
+            }
+
+        return {
+            'total_tasks': total_tasks,
+            'active_tasks': active_tasks,
+            'completed_tasks': completed_tasks,
+            'failed_tasks': failed_tasks,
+            'success_rate': (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0,
+            'active_clients': len(self.get_available_clients_for_download()),
+            'client_statistics': client_stats,
+            'concurrent_downloads': len(self.active_downloads)
+        }

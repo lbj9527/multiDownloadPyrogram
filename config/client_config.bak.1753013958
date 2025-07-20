@@ -20,16 +20,6 @@
       "status": "not_logged_in",
       "last_active": null,
       "error_message": null
-    },
-    {
-      "api_id": 25448404,
-      "api_hash": "0c910748a61fc30bb14e073a31933fb6",
-      "phone_number": "+12568888602",
-      "session_name": "session_3",
-      "enabled": true,
-      "status": "not_logged_in",
-      "last_active": null,
-      "error_message": null
     }
   ]
 }

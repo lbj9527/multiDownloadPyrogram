@@ -39,9 +39,11 @@ class ClientConfigFrame:
         
         # 当前配置
         self.current_config: Optional[MultiClientConfig] = None
-        
+
         # UI组件
-        self.client_widgets = []
+        self.client_status_widgets = {}  # 存储客户端状态组件的引用
+        self.login_buttons = {}  # 存储登录按钮的引用
+        self.logout_buttons = {}  # 存储登出按钮的引用
         
         # 创建界面
         self.setup_ui()
@@ -121,7 +123,7 @@ class ClientConfigFrame:
         # 客户端配置框架
         self.client_config_frame = ctk.CTkFrame(self.main_frame)
         self.client_config_frame.pack(fill="both", expand=True, padx=5, pady=5)
-        
+
         # 标题
         title_label = ctk.CTkLabel(
             self.client_config_frame,
@@ -129,13 +131,27 @@ class ClientConfigFrame:
             font=ctk.CTkFont(size=16, weight="bold")
         )
         title_label.pack(pady=(10, 5))
-        
-        # 滚动框架
-        self.scroll_frame = ctk.CTkScrollableFrame(self.client_config_frame)
-        self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        # 初始化客户端配置UI
-        self.update_client_config_ui()
+
+        # 配置状态显示区域
+        self.status_frame = ctk.CTkFrame(self.client_config_frame)
+        self.status_frame.pack(fill="x", padx=10, pady=5)
+
+        # API设置按钮区域
+        self.api_button_frame = ctk.CTkFrame(self.client_config_frame)
+        self.api_button_frame.pack(fill="x", padx=10, pady=10)
+
+        # 创建API设置按钮
+        self.api_settings_button = ctk.CTkButton(
+            self.api_button_frame,
+            text="🔧 API 设置",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40,
+            command=self.open_api_settings
+        )
+        self.api_settings_button.pack(pady=15)
+
+        # 初始化客户端状态显示
+        self.update_client_status_display()
     
     def create_action_buttons(self):
         """创建操作按钮区域"""
@@ -158,22 +174,6 @@ class ClientConfigFrame:
         )
         test_button.pack(side="left", padx=5, pady=10)
         
-        # 全部登录按钮
-        login_all_button = ctk.CTkButton(
-            button_frame,
-            text="全部登录",
-            command=self.login_all_clients
-        )
-        login_all_button.pack(side="left", padx=5, pady=10)
-        
-        # 全部登出按钮
-        logout_all_button = ctk.CTkButton(
-            button_frame,
-            text="全部登出",
-            command=self.logout_all_clients
-        )
-        logout_all_button.pack(side="left", padx=5, pady=10)
-        
         # 状态刷新按钮
         refresh_button = ctk.CTkButton(
             button_frame,
@@ -184,144 +184,304 @@ class ClientConfigFrame:
     
     def on_account_type_changed(self):
         """账户类型改变事件"""
-        self.update_client_config_ui()
+        self.update_client_status_display()
     
-    def update_client_config_ui(self):
-        """更新客户端配置UI"""
-        # 清除现有的客户端配置UI
-        for widget in self.client_widgets:
+    def update_client_status_display(self):
+        """更新客户端状态显示"""
+        # 清除现有的状态显示
+        for widget in self.status_frame.winfo_children():
             widget.destroy()
-        self.client_widgets.clear()
-        
-        # 获取账户类型
+
+        # 获取账户类型和最大客户端数
         account_type = AccountType(self.account_type_var.get())
         max_clients = 3 if account_type == AccountType.NORMAL else 4
-        
-        # 创建客户端配置UI
-        for i in range(max_clients):
-            client_frame = self.create_client_widget(i + 1)
-            self.client_widgets.append(client_frame)
-    
-    def create_client_widget(self, client_number: int) -> ctk.CTkFrame:
-        """
-        创建单个客户端配置组件
-        
-        Args:
-            client_number: 客户端编号
-            
-        Returns:
-            ctk.CTkFrame: 客户端配置框架
-        """
-        # 客户端框架
-        client_frame = ctk.CTkFrame(self.scroll_frame)
-        client_frame.pack(fill="x", padx=5, pady=5)
-        
-        # 标题和状态
-        header_frame = ctk.CTkFrame(client_frame)
-        header_frame.pack(fill="x", padx=10, pady=(10, 5))
-        
-        title_label = ctk.CTkLabel(
-            header_frame,
-            text=f"客户端 {client_number}",
+
+        # 创建状态显示标题
+        status_title = ctk.CTkLabel(
+            self.status_frame,
+            text="客户端状态",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        title_label.pack(side="left", padx=5, pady=5)
-        
-        # 状态指示器
-        status_label = ctk.CTkLabel(
-            header_frame,
-            text="●",
-            font=ctk.CTkFont(size=16),
-            text_color="gray"
-        )
-        status_label.pack(side="right", padx=5, pady=5)
-        
-        status_text = ctk.CTkLabel(
-            header_frame,
-            text="未配置",
-            font=ctk.CTkFont(size=12)
-        )
-        status_text.pack(side="right", padx=(0, 5), pady=5)
-        
-        # 配置输入区域
-        config_frame = ctk.CTkFrame(client_frame)
-        config_frame.pack(fill="x", padx=10, pady=5)
-        
-        # API ID
-        api_id_label = ctk.CTkLabel(config_frame, text="API ID:")
-        api_id_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        
-        api_id_entry = ctk.CTkEntry(config_frame, placeholder_text="输入API ID")
-        api_id_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        
-        # API Hash
-        api_hash_label = ctk.CTkLabel(config_frame, text="API Hash:")
-        api_hash_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        
-        api_hash_entry = ctk.CTkEntry(config_frame, placeholder_text="输入API Hash")
-        api_hash_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        
-        # 电话号码
-        phone_label = ctk.CTkLabel(config_frame, text="电话号码:")
-        phone_label.grid(row=2, column=0, padx=5, pady=5, sticky="w")
-        
-        phone_entry = ctk.CTkEntry(config_frame, placeholder_text="输入电话号码 (如+86138...)")
-        phone_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-        
-        # 会话名称
-        session_label = ctk.CTkLabel(config_frame, text="会话名称:")
-        session_label.grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        
-        session_entry = ctk.CTkEntry(config_frame, placeholder_text="输入会话名称")
-        session_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
-        
-        # 设置列权重
-        config_frame.grid_columnconfigure(1, weight=1)
-        
-        # 操作按钮
-        button_frame = ctk.CTkFrame(client_frame)
-        button_frame.pack(fill="x", padx=10, pady=(5, 10))
-        
-        # 启用/禁用开关
-        enabled_var = ctk.BooleanVar(value=True)
-        enabled_switch = ctk.CTkSwitch(
-            button_frame,
-            text="启用",
-            variable=enabled_var
-        )
-        enabled_switch.pack(side="left", padx=5, pady=5)
-        
-        # 登录按钮
-        login_button = ctk.CTkButton(
-            button_frame,
-            text="登录",
-            width=80,
-            command=lambda: self.login_client(client_number - 1)
-        )
-        login_button.pack(side="right", padx=5, pady=5)
-        
-        # 登出按钮
-        logout_button = ctk.CTkButton(
-            button_frame,
-            text="登出",
-            width=80,
-            command=lambda: self.logout_client(client_number - 1)
-        )
-        logout_button.pack(side="right", padx=5, pady=5)
-        
-        # 保存组件引用
-        client_frame.api_id_entry = api_id_entry
-        client_frame.api_hash_entry = api_hash_entry
-        client_frame.phone_entry = phone_entry
-        client_frame.session_entry = session_entry
-        client_frame.enabled_var = enabled_var
-        client_frame.status_label = status_label
-        client_frame.status_text = status_text
-        client_frame.login_button = login_button
-        client_frame.logout_button = logout_button
-        client_frame.client_number = client_number
-        
-        return client_frame
+        status_title.pack(pady=(10, 5))
+
+        # 创建客户端状态网格
+        status_grid_frame = ctk.CTkFrame(self.status_frame)
+        status_grid_frame.pack(pady=(0, 10))
+
+        # 清除旧的组件引用
+        self.client_status_widgets.clear()
+        self.login_buttons.clear()
+        self.logout_buttons.clear()
+
+        # 显示每个客户端的状态
+        for i in range(max_clients):
+            client_status_frame = ctk.CTkFrame(status_grid_frame)
+            client_status_frame.grid(row=i // 2, column=i % 2, padx=10, pady=5, sticky="ew")
+
+            # 获取客户端会话名称
+            session_name = f"session_{i + 1}"
+            if (self.current_config and
+                i < len(self.current_config.clients)):
+                session_name = self.current_config.clients[i].session_name
+
+            # 客户端编号
+            client_label = ctk.CTkLabel(
+                client_status_frame,
+                text=f"客户端 {i + 1}",
+                font=ctk.CTkFont(size=12, weight="bold")
+            )
+            client_label.pack(side="left", padx=10, pady=8)
+
+            # 状态指示器和文本
+            status_text, status_color = self.get_client_status_info(i)
+
+            # 操作按钮区域
+            button_frame = ctk.CTkFrame(client_status_frame)
+            button_frame.pack(side="right", padx=5, pady=5)
+
+            # 登录按钮
+            login_button = ctk.CTkButton(
+                button_frame,
+                text="登录",
+                width=50,
+                height=25,
+                font=ctk.CTkFont(size=10),
+                command=lambda idx=i: self.login_client(idx)
+            )
+            login_button.pack(side="right", padx=2)
+            self.login_buttons[session_name] = login_button
+
+            # 登出按钮
+            logout_button = ctk.CTkButton(
+                button_frame,
+                text="登出",
+                width=50,
+                height=25,
+                font=ctk.CTkFont(size=10),
+                command=lambda idx=i: self.logout_client(idx)
+            )
+            logout_button.pack(side="right", padx=2)
+            self.logout_buttons[session_name] = logout_button
+
+            status_indicator = ctk.CTkLabel(
+                client_status_frame,
+                text="●",
+                font=ctk.CTkFont(size=14),
+                text_color=status_color
+            )
+            status_indicator.pack(side="right", padx=(0, 5), pady=8)
+
+            status_label = ctk.CTkLabel(
+                client_status_frame,
+                text=status_text,
+                font=ctk.CTkFont(size=11)
+            )
+            status_label.pack(side="right", padx=(0, 5), pady=8)
+
+            # 保存状态组件引用
+            self.client_status_widgets[session_name] = {
+                'status_indicator': status_indicator,
+                'status_label': status_label,
+                'client_index': i
+            }
+
+        # 更新按钮状态（实现顺序登录控制）
+        self.update_login_button_states()
+
+        # 设置网格列权重
+        status_grid_frame.grid_columnconfigure(0, weight=1)
+        status_grid_frame.grid_columnconfigure(1, weight=1)
+
+    def get_client_status_info(self, client_index: int) -> tuple:
+        """
+        获取客户端状态信息
+
+        Args:
+            client_index: 客户端索引
+
+        Returns:
+            tuple: (状态文本, 状态颜色)
+        """
+        if not self.current_config or client_index >= len(self.current_config.clients):
+            return "未配置", "gray"
+
+        client = self.current_config.clients[client_index]
+
+        if not client.enabled:
+            return "已禁用", "gray"
+
+        if not client.api_id or not client.api_hash or not client.phone_number:
+            return "配置不完整", "orange"
+
+        # 检查客户端管理器中的状态
+        if self.client_manager:
+            session_name = client.session_name
+            if session_name in self.client_manager.client_status:
+                status = self.client_manager.client_status[session_name]
+                if status == ClientStatus.LOGGED_IN:
+                    return "已登录", "green"
+                elif status == ClientStatus.LOGGING_IN:
+                    return "登录中", "blue"
+                elif status == ClientStatus.LOGIN_FAILED:
+                    return "登录失败", "red"
+                elif status == ClientStatus.NOT_LOGGED_IN:
+                    return "未登录", "orange"
+                elif status == ClientStatus.ERROR:
+                    return "错误", "red"
+                elif status == ClientStatus.DISABLED:
+                    return "已禁用", "gray"
+
+        return "未连接", "gray"
+
+    def update_login_button_states(self):
+        """更新登录按钮状态（实现顺序登录控制）"""
+        try:
+            if not self.client_manager:
+                # 如果没有客户端管理器，禁用所有按钮
+                for session_name in self.login_buttons:
+                    self.login_buttons[session_name].configure(state="disabled")
+                    self.logout_buttons[session_name].configure(state="disabled")
+                return
+
+            # 获取按钮状态
+            button_states = self.client_manager.get_login_button_states()
+
+            # 更新每个按钮的状态
+            for session_name, login_button in self.login_buttons.items():
+                # 登录按钮状态
+                if session_name in button_states:
+                    login_enabled = button_states[session_name]
+                    login_button.configure(state="normal" if login_enabled else "disabled")
+                else:
+                    login_button.configure(state="disabled")
+
+                # 登出按钮状态（只有已登录的客户端才能登出）
+                if (session_name in self.client_manager.client_status and
+                    self.client_manager.client_status[session_name] == ClientStatus.LOGGED_IN):
+                    self.logout_buttons[session_name].configure(state="normal")
+                else:
+                    self.logout_buttons[session_name].configure(state="disabled")
+
+        except Exception as e:
+            self.logger.error(f"更新登录按钮状态失败: {e}")
+
+    def check_disable_client_constraint(self, client_index: int) -> bool:
+        """
+        检查禁用客户端的约束（强制启用约束）
+
+        Args:
+            client_index: 客户端索引
+
+        Returns:
+            bool: 是否可以禁用
+        """
+        try:
+            if not self.current_config or client_index >= len(self.current_config.clients):
+                return False
+
+            client_config = self.current_config.clients[client_index]
+
+            if not self.client_manager:
+                return True
+
+            can_disable, error_msg = self.client_manager.can_disable_client(client_config.session_name)
+
+            if not can_disable:
+                # 显示错误提示
+                import tkinter.messagebox as messagebox
+                messagebox.showerror("禁用失败", error_msg)
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.error(f"检查禁用约束失败: {e}")
+            return False
+
+    def open_api_settings(self):
+        """打开API设置窗口"""
+        try:
+            from .api_settings_window import APISettingsWindow
+
+            # 获取当前账户类型
+            account_type = AccountType(self.account_type_var.get())
+
+            # 获取当前客户端配置，只传递有效的配置
+            clients = []
+            if self.current_config and self.current_config.clients:
+                # 只复制有效的客户端配置
+                for client in self.current_config.clients:
+                    if (client.api_id > 0 and
+                        client.api_hash and
+                        client.phone_number and
+                        client.session_name):
+                        clients.append(client)
+
+            # 创建API设置窗口
+            api_window = APISettingsWindow(
+                parent=self.parent,
+                account_type=account_type,
+                clients=clients,
+                on_save_callback=self.on_api_settings_saved
+            )
+
+            # 显示窗口
+            api_window.show()
+
+        except Exception as e:
+            self.logger.error(f"打开API设置窗口失败: {e}")
+            # 显示用户友好的错误信息
+            try:
+                import tkinter.messagebox as messagebox
+                messagebox.showerror("错误", f"无法打开API设置窗口: {e}")
+            except:
+                pass
+
+    def on_api_settings_saved(self, updated_clients: List[ClientConfig]):
+        """API设置保存回调"""
+        try:
+            # 更新当前配置
+            account_type = AccountType(self.account_type_var.get())
+
+            if not self.current_config:
+                self.current_config = MultiClientConfig(
+                    account_type=account_type,
+                    clients=updated_clients
+                )
+            else:
+                self.current_config.account_type = account_type
+                self.current_config.clients = updated_clients
+
+            # 保存配置
+            if self.config_manager.save_client_config(self.current_config):
+                # 更新状态显示
+                self.update_client_status_display()
+
+                # 重新创建客户端管理器
+                if self.client_manager:
+                    # 在后台线程中安全地关闭客户端
+                    def shutdown_async():
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(self.client_manager.shutdown_all_clients())
+                            loop.close()
+                        except Exception as e:
+                            self.logger.error(f"关闭客户端管理器失败: {e}")
+
+                    import threading
+                    threading.Thread(target=shutdown_async, daemon=True).start()
+
+                self.client_manager = ClientManager(self.current_config, self.on_client_manager_event)
+
+                self.logger.info("API设置已保存并应用")
+            else:
+                self.logger.error("保存API设置失败")
+
+        except Exception as e:
+            self.logger.error(f"应用API设置失败: {e}")
+    
+
 
     def load_config(self):
         """加载配置"""
@@ -333,21 +493,8 @@ class ClientConfigFrame:
                 # 设置账户类型
                 self.account_type_var.set(self.current_config.account_type.value)
 
-                # 更新UI
-                self.update_client_config_ui()
-
-                # 填充客户端配置
-                for i, client_config in enumerate(self.current_config.clients):
-                    if i < len(self.client_widgets):
-                        widget = self.client_widgets[i]
-                        widget.api_id_entry.insert(0, str(client_config.api_id))
-                        widget.api_hash_entry.insert(0, client_config.api_hash)
-                        widget.phone_entry.insert(0, client_config.phone_number)
-                        widget.session_entry.insert(0, client_config.session_name)
-                        widget.enabled_var.set(client_config.enabled)
-
-                        # 更新状态
-                        self.update_client_status(i, client_config.status)
+                # 更新状态显示
+                self.update_client_status_display()
 
                 # 创建客户端管理器
                 self.client_manager = ClientManager(self.current_config, self.on_client_manager_event)
@@ -366,47 +513,29 @@ class ClientConfigFrame:
     def save_config(self):
         """保存配置"""
         try:
-            # 获取账户类型
-            account_type = AccountType(self.account_type_var.get())
-
-            # 收集客户端配置
-            clients = []
-            for widget in self.client_widgets:
-                api_id_text = widget.api_id_entry.get().strip()
-                api_hash_text = widget.api_hash_entry.get().strip()
-                phone_text = widget.phone_entry.get().strip()
-                session_text = widget.session_entry.get().strip()
-
-                # 跳过空配置
-                if not all([api_id_text, api_hash_text, phone_text, session_text]):
-                    continue
-
-                try:
-                    client_config = ClientConfig(
-                        api_id=int(api_id_text),
-                        api_hash=api_hash_text,
-                        phone_number=phone_text,
-                        session_name=session_text,
-                        enabled=widget.enabled_var.get()
-                    )
-                    clients.append(client_config)
-                except Exception as e:
-                    self.logger.error(f"客户端 {widget.client_number} 配置无效: {e}")
-                    self.show_error(f"客户端 {widget.client_number} 配置无效: {e}")
-                    return
-
-            # 创建多客户端配置
-            try:
-                self.current_config = MultiClientConfig(
-                    account_type=account_type,
-                    clients=clients
-                )
+            # 现在配置保存通过API设置窗口完成
+            # 这个方法主要用于保存当前配置状态
+            if self.current_config:
+                # 获取当前账户类型
+                account_type = AccountType(self.account_type_var.get())
+                self.current_config.account_type = account_type
 
                 # 保存配置
                 if self.config_manager.save_client_config(self.current_config):
                     # 重新创建客户端管理器
                     if self.client_manager:
-                        asyncio.create_task(self.client_manager.shutdown_all_clients())
+                        # 在后台线程中安全地关闭客户端
+                        def shutdown_async():
+                            try:
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                loop.run_until_complete(self.client_manager.shutdown_all_clients())
+                                loop.close()
+                            except Exception as e:
+                                self.logger.error(f"关闭客户端管理器失败: {e}")
+
+                        import threading
+                        threading.Thread(target=shutdown_async, daemon=True).start()
 
                     self.client_manager = ClientManager(self.current_config, self.on_client_manager_event)
 
@@ -414,10 +543,8 @@ class ClientConfigFrame:
                     self.logger.info("客户端配置保存成功")
                 else:
                     self.show_error("配置保存失败")
-
-            except Exception as e:
-                self.logger.error(f"配置验证失败: {e}")
-                self.show_error(f"配置验证失败: {e}")
+            else:
+                self.show_error("没有可保存的配置，请先通过API设置配置客户端")
 
         except Exception as e:
             self.logger.error(f"保存配置失败: {e}")
@@ -435,20 +562,52 @@ class ClientConfigFrame:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
+                # 首先确保客户端已启用
+                if not self.client_manager.enable_client(client_config.session_name):
+                    self.logger.error(f"无法启用客户端 {client_config.session_name}")
+                    return
+
+                # 执行登录
                 success = loop.run_until_complete(
                     self.client_manager.login_client(client_config.session_name)
                 )
                 if success:
                     self.logger.info(f"客户端 {client_config.session_name} 登录成功")
+                    # 在主线程中更新UI
+                    self.parent.after(0, self._update_ui_after_login_success)
                 else:
                     self.logger.error(f"客户端 {client_config.session_name} 登录失败")
+                    # 在主线程中更新UI
+                    self.parent.after(0, self._update_ui_after_login_failure)
             except Exception as e:
                 self.logger.error(f"客户端登录异常: {e}")
+                # 在主线程中更新UI
+                self.parent.after(0, self._update_ui_after_login_failure)
             finally:
                 loop.close()
 
         import threading
         threading.Thread(target=login_async, daemon=True).start()
+
+    def _update_ui_after_login_success(self):
+        """登录成功后更新UI"""
+        try:
+            # 更新状态显示
+            self.update_client_status_display()
+            # 更新按钮状态
+            self.update_login_button_states()
+        except Exception as e:
+            self.logger.error(f"登录成功后更新UI失败: {e}")
+
+    def _update_ui_after_login_failure(self):
+        """登录失败后更新UI"""
+        try:
+            # 更新状态显示
+            self.update_client_status_display()
+            # 更新按钮状态
+            self.update_login_button_states()
+        except Exception as e:
+            self.logger.error(f"登录失败后更新UI失败: {e}")
 
     def logout_client(self, client_index: int):
         """登出指定客户端"""
@@ -477,33 +636,7 @@ class ClientConfigFrame:
         import threading
         threading.Thread(target=logout_async, daemon=True).start()
 
-    def login_all_clients(self):
-        """登录所有客户端"""
-        if not self.client_manager:
-            self.show_error("请先保存配置")
-            return
 
-        for i in range(len(self.current_config.clients)):
-            self.login_client(i)
-
-    def logout_all_clients(self):
-        """登出所有客户端"""
-        if not self.client_manager:
-            return
-
-        def logout_all_async():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(self.client_manager.shutdown_all_clients())
-                self.logger.info("所有客户端已登出")
-            except Exception as e:
-                self.logger.error(f"登出所有客户端异常: {e}")
-            finally:
-                loop.close()
-
-        import threading
-        threading.Thread(target=logout_all_async, daemon=True).start()
 
     def test_connections(self):
         """测试连接"""
@@ -542,44 +675,18 @@ class ClientConfigFrame:
 
     def update_client_status(self, client_index: int, status: ClientStatus):
         """更新客户端状态显示"""
-        if client_index >= len(self.client_widgets):
-            return
+        # 现在状态更新通过 update_client_status_display 方法统一处理
+        # 这个方法主要用于记录状态变化
+        try:
+            if self.current_config and client_index < len(self.current_config.clients):
+                client = self.current_config.clients[client_index]
+                client.status = status
+                self.logger.debug(f"客户端 {client_index + 1} 状态更新为: {status.value}")
 
-        widget = self.client_widgets[client_index]
-
-        # 状态颜色映射
-        status_colors = {
-            ClientStatus.NOT_LOGGED_IN: "gray",
-            ClientStatus.LOGGING_IN: "yellow",
-            ClientStatus.LOGGED_IN: "green",
-            ClientStatus.LOGIN_FAILED: "red",
-            ClientStatus.DISABLED: "gray",
-            ClientStatus.ERROR: "red"
-        }
-
-        # 状态文本映射
-        status_texts = {
-            ClientStatus.NOT_LOGGED_IN: "未登录",
-            ClientStatus.LOGGING_IN: "登录中",
-            ClientStatus.LOGGED_IN: "已登录",
-            ClientStatus.LOGIN_FAILED: "登录失败",
-            ClientStatus.DISABLED: "已禁用",
-            ClientStatus.ERROR: "错误"
-        }
-
-        color = status_colors.get(status, "gray")
-        text = status_texts.get(status, "未知")
-
-        widget.status_label.configure(text_color=color)
-        widget.status_text.configure(text=text)
-
-        # 更新按钮状态
-        if status == ClientStatus.LOGGED_IN:
-            widget.login_button.configure(state="disabled")
-            widget.logout_button.configure(state="normal")
-        else:
-            widget.login_button.configure(state="normal")
-            widget.logout_button.configure(state="disabled")
+                # 刷新整个状态显示
+                self.update_client_status_display()
+        except Exception as e:
+            self.logger.error(f"更新客户端状态失败: {e}")
 
     def on_client_event(self, event: BaseEvent):
         """处理客户端事件"""

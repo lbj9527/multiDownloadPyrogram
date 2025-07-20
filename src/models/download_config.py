@@ -119,9 +119,10 @@ class DownloadConfig(BaseModel):
         if v is not None:
             if not isinstance(v, int) or v <= 0:
                 raise ValueError("最大文件大小必须为正整数")
-            # 限制最大文件大小为2GB
-            if v > 2 * 1024 * 1024 * 1024:
-                raise ValueError("最大文件大小不能超过2GB")
+            # 限制最大文件大小为50GB（更合理的限制）
+            max_size = 50 * 1024 * 1024 * 1024  # 50GB
+            if v > max_size:
+                raise ValueError(f"最大文件大小不能超过50GB（{max_size:,}字节）")
         return v
 
 
