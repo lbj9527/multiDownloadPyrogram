@@ -173,6 +173,20 @@ def create_error_event(
     )
 
 
+class ConfigUpdatedEvent(BaseModel):
+    """配置更新事件"""
+    model_config = ConfigDict(extra='forbid')
+
+    event_id: str = Field(..., description="事件ID")
+    event_type: EventType = Field(default=EventType.CONFIG_UPDATED, description="事件类型")
+    timestamp: datetime = Field(default_factory=datetime.now, description="事件时间戳")
+    message: str = Field(..., description="事件消息")
+    config_type: str = Field(..., description="配置类型")
+    config_data: Optional[Dict[str, Any]] = Field(None, description="配置数据")
+    severity: EventSeverity = Field(default=EventSeverity.INFO, description="严重程度")
+    source: str = Field(default="config", description="事件源")
+
+
 def create_system_event(
     event_type: EventType,
     message: str,
@@ -190,4 +204,21 @@ def create_system_event(
         data=data,
         severity=severity,
         source="system"
+    )
+
+
+def create_config_updated_event(
+    message: str,
+    config_type: str,
+    config_data: Optional[Dict[str, Any]] = None,
+    severity: EventSeverity = EventSeverity.INFO
+) -> ConfigUpdatedEvent:
+    """创建配置更新事件"""
+    import uuid
+    return ConfigUpdatedEvent(
+        event_id=str(uuid.uuid4()),
+        message=message,
+        config_type=config_type,
+        config_data=config_data,
+        severity=severity
     )

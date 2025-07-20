@@ -69,6 +69,15 @@ class ConfigManager:
                 "show_progress_details": True,
                 "confirm_before_download": True,
                 "minimize_to_tray": False
+            },
+            "proxy": {
+                "enabled": False,
+                "type": "socks5",
+                "host": "127.0.0.1",
+                "port": 1080,
+                "username": "",
+                "password": "",
+                "test_url": "https://api.telegram.org"
             }
         }
         

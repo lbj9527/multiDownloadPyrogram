@@ -524,16 +524,41 @@ class SettingsWindow:
             new_config["logging"]["console_output"] = self.console_output_var.get()
 
             # 代理设置
+            if "proxy" not in new_config:
+                new_config["proxy"] = {}
             new_config["proxy"]["enabled"] = self.proxy_enabled_var.get()
             new_config["proxy"]["type"] = self.proxy_type_var.get()
             new_config["proxy"]["host"] = self.proxy_host_entry.get().strip()
             new_config["proxy"]["port"] = int(self.proxy_port_entry.get())
             new_config["proxy"]["username"] = self.proxy_username_entry.get().strip()
             new_config["proxy"]["password"] = self.proxy_password_entry.get().strip()
+            # 确保test_url字段存在
+            if "test_url" not in new_config["proxy"]:
+                new_config["proxy"]["test_url"] = "https://api.telegram.org"
 
             # 保存配置
             if self.config_manager.save_app_config(new_config):
                 self.current_config = new_config
+
+                # 通知主窗口重新加载配置
+                try:
+                    # 检查父窗口是否有重新加载配置的方法
+                    if hasattr(self.parent, 'master') and hasattr(self.parent.master, 'reload_app_config'):
+                        self.parent.master.reload_app_config()
+                    elif hasattr(self.parent, 'reload_app_config'):
+                        self.parent.reload_app_config()
+                    else:
+                        # 尝试通过全局方式通知主窗口
+                        from ..core.event_manager import event_manager
+                        from ..models.events import create_config_updated_event
+                        event_manager.emit(create_config_updated_event(
+                            message="应用配置已更新",
+                            config_type="app_config",
+                            config_data=new_config
+                        ))
+                except Exception as e:
+                    self.logger.warning(f"通知主窗口重新加载配置失败: {e}")
+
                 self.logger.info("设置已保存")
                 return True
             else:

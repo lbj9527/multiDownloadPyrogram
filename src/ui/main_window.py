@@ -253,10 +253,16 @@ class MainWindow:
     def _update_ui_from_event(self, event: BaseEvent):
         """从事件更新UI（在主线程中执行）"""
         try:
+            # 处理配置更新事件
+            if event.event_type == EventType.CONFIG_UPDATED:
+                self.reload_app_config()
+                self.update_status("配置已更新", "green")
+                return
+
             # 更新状态栏
             if event.event_type in [EventType.CLIENT_LOGIN_SUCCESS, EventType.CLIENT_DISCONNECTED]:
                 self.update_connection_status()
-            
+
             # 更新状态消息
             if event.severity.value in ["error", "critical"]:
                 self.update_status(f"错误: {event.message}", "red")
@@ -266,7 +272,7 @@ class MainWindow:
                 self.update_status("下载完成", "green")
             elif event.event_type == EventType.CLIENT_LOGIN_SUCCESS:
                 self.update_status("客户端登录成功", "green")
-                
+
         except Exception as e:
             self.logger.error(f"更新UI失败: {e}")
     
@@ -361,23 +367,31 @@ class MainWindow:
             self.loop.call_soon_threadsafe(self.loop.stop)
             self.logger.info("异步事件循环已停止")
     
+    def reload_app_config(self):
+        """重新加载应用配置"""
+        try:
+            self.app_config = self.config_manager.load_app_config()
+            self.logger.debug("应用配置已重新加载")
+        except Exception as e:
+            self.logger.error(f"重新加载应用配置失败: {e}")
+
     def on_closing(self):
         """窗口关闭事件处理"""
         try:
             self.logger.info("正在关闭应用...")
-            
+
             # 停止事件管理器
             event_manager.stop_processing()
-            
+
             # 停止异步循环
             self.stop_async_loop()
-            
-            # 保存配置
-            self.config_manager.save_app_config(self.app_config)
-            
-            # 关闭窗口
+
+            # 重新加载最新配置，避免覆盖用户修改
+            self.reload_app_config()
+
+            # 关闭窗口（不再保存配置，因为配置已经在设置窗口中保存了）
             self.root.destroy()
-            
+
         except Exception as e:
             self.logger.error(f"关闭应用时发生错误: {e}")
             self.root.destroy()

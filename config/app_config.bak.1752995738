@@ -30,10 +30,10 @@
     "minimize_to_tray": false
   },
   "proxy": {
-    "enabled": false,
+    "enabled": true,
     "type": "socks5",
     "host": "127.0.0.1",
-    "port": 1080,
+    "port": 7890,
     "username": "",
     "password": "",
     "test_url": "https://api.telegram.org"
