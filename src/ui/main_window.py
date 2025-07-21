@@ -7,6 +7,7 @@
 import customtkinter as ctk
 import asyncio
 import threading
+import time
 
 from ..utils.config_manager import ConfigManager
 from ..utils.logger import get_logger
@@ -104,8 +105,17 @@ class MainWindow:
         self.loop = None
         self.loop_thread = None
 
+        # 网络状态跟踪
+        self._last_network_status = None  # 上次网络状态
+
         # 延迟更新连接状态，确保所有组件都已初始化
         self.root.after(1000, self.update_connection_status)
+
+        # 延迟2秒后开始网络检测
+        self.root.after(2000, self.update_network_status)
+
+        # 延迟3秒后开始定时更新（心跳检测）
+        self.root.after(3000, self.schedule_connection_status_update)
 
         self.logger.info("主窗口初始化完成")
     
@@ -205,7 +215,7 @@ class MainWindow:
         """创建状态栏"""
         self.status_frame = ctk.CTkFrame(self.main_frame)
         self.status_frame.pack(fill="x", padx=5, pady=(5, 0))
-        
+
         # 状态标签
         self.status_label = ctk.CTkLabel(
             self.status_frame,
@@ -213,23 +223,32 @@ class MainWindow:
             font=ctk.CTkFont(size=12)
         )
         self.status_label.pack(side="left", padx=10, pady=5)
-        
-        # 连接状态指示器
-        self.connection_indicator = ctk.CTkLabel(
+
+        # 客户端连接数量显示
+        self.client_count_label = ctk.CTkLabel(
+            self.status_frame,
+            text="客户端: 0/0",
+            font=ctk.CTkFont(size=12),
+            text_color="gray"
+        )
+        self.client_count_label.pack(side="left", padx=(20, 10), pady=5)
+
+        # 网络连接状态指示器
+        self.network_indicator = ctk.CTkLabel(
             self.status_frame,
             text="●",
             font=ctk.CTkFont(size=16),
             text_color="gray"
         )
-        self.connection_indicator.pack(side="right", padx=10, pady=5)
-        
-        # 连接状态文本
-        self.connection_label = ctk.CTkLabel(
+        self.network_indicator.pack(side="right", padx=10, pady=5)
+
+        # 网络连接状态文本
+        self.network_label = ctk.CTkLabel(
             self.status_frame,
-            text="未连接",
+            text="网络检测中",
             font=ctk.CTkFont(size=12)
         )
-        self.connection_label.pack(side="right", padx=(0, 5), pady=5)
+        self.network_label.pack(side="right", padx=(0, 5), pady=5)
     
     def setup_events(self):
         """设置事件处理"""
@@ -298,43 +317,170 @@ class MainWindow:
                 self.root.after(5000, lambda: self.update_status())
         except Exception as e:
             self.logger.error(f"更新状态失败: {e}")
-    
-    def update_connection_status(self):
-        """更新连接状态"""
+
+    def check_network_connection(self) -> tuple[bool, str]:
+        """检测网络连接状态 - 使用代理连接Google"""
         try:
-            # 获取客户端连接状态
+            # 获取代理配置
+            from ..utils.proxy_utils import get_proxy_manager
+            proxy_manager = get_proxy_manager()
+
+            # 使用异步方式测试连接（通过代理）
+            if self.loop and not self.loop.is_closed():
+                try:
+                    # 在异步事件循环中执行代理测试
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._test_google_with_proxy(proxy_manager),
+                        self.loop
+                    )
+                    is_connected, status_text = future.result(timeout=5.0)
+                    return is_connected, status_text
+                except Exception as e:
+                    self.logger.debug(f"异步代理测试失败: {e}")
+                    return False, "网络断开"
+            else:
+                self.logger.debug("异步事件循环不可用，无法进行代理测试")
+                return False, "网络检测失败"
+
+        except Exception as e:
+            self.logger.error(f"网络检测异常: {e}")
+            return False, "网络检测失败"
+
+    async def _test_google_with_proxy(self, proxy_manager) -> tuple[bool, str]:
+        """使用代理测试Google连接"""
+        try:
+            import aiohttp
+
+            # 获取代理URL
+            proxy_url = proxy_manager.get_proxy_url()
+
+            # 设置超时
+            timeout = aiohttp.ClientTimeout(total=3)
+
+            start_time = time.time()
+
+            # 创建HTTP会话
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # 使用代理连接Google
+                async with session.get(
+                    "https://www.google.com",
+                    proxy=proxy_url
+                ) as response:
+                    end_time = time.time()
+
+                    if response.status == 200:
+                        response_time = int((end_time - start_time) * 1000)
+                        proxy_info = "使用代理" if proxy_url else "直连"
+                        self.logger.debug(f"Google连接成功: {proxy_info} ({response_time}ms)")
+                        return True, f"网络正常 ({response_time}ms)"
+                    else:
+                        self.logger.debug(f"Google连接失败: HTTP {response.status}")
+                        return False, "网络断开"
+
+        except asyncio.TimeoutError:
+            self.logger.debug("Google连接超时")
+            return False, "网络断开"
+        except Exception as e:
+            error_msg = str(e)
+            if "ProxyConnectionError" in error_msg or "proxy" in error_msg.lower():
+                self.logger.debug("代理连接失败")
+                return False, "网络断开"
+            elif "ConnectorError" in error_msg or "connection" in error_msg.lower():
+                self.logger.debug("网络连接失败")
+                return False, "网络断开"
+            else:
+                self.logger.debug(f"Google连接异常: {e}")
+                return False, "网络断开"
+
+    def update_network_status(self):
+        """更新网络连接状态 - 心跳检测"""
+        def check_network():
+            try:
+                is_connected, status_text = self.check_network_connection()
+
+                # 在主线程中更新UI
+                def update_ui():
+                    try:
+                        if is_connected:
+                            self.network_indicator.configure(text_color="green")
+                            self.network_label.configure(text=status_text)
+                            # 记录网络恢复
+                            if hasattr(self, '_last_network_status') and not self._last_network_status:
+                                self.logger.info("网络连接已恢复")
+                                self.update_status("网络连接已恢复", "green")
+                        else:
+                            self.network_indicator.configure(text_color="red")
+                            self.network_label.configure(text=status_text)
+                            # 记录网络断开
+                            if not hasattr(self, '_last_network_status') or self._last_network_status:
+                                self.logger.warning("网络连接已断开")
+                                self.update_status("网络连接已断开", "red")
+
+                        # 保存当前网络状态
+                        self._last_network_status = is_connected
+
+                    except Exception as e:
+                        self.logger.error(f"更新网络状态UI失败: {e}")
+
+                if self.root:
+                    self.root.after(0, update_ui)
+
+            except Exception as e:
+                self.logger.error(f"网络心跳检测失败: {e}")
+                # 网络检测失败时也要更新UI
+                def update_error_ui():
+                    try:
+                        self.network_indicator.configure(text_color="gray")
+                        self.network_label.configure(text="网络检测失败")
+                    except Exception:
+                        pass
+
+                if self.root:
+                    self.root.after(0, update_error_ui)
+
+        # 在后台线程中执行网络检测
+        threading.Thread(target=check_network, daemon=True).start()
+
+    def update_client_count_status(self):
+        """更新客户端连接数量状态"""
+        try:
             if hasattr(self.client_config_frame, 'client_manager') and self.client_config_frame.client_manager:
                 enabled_clients = self.client_config_frame.client_manager.get_enabled_clients()
-                self.logger.info(f"更新连接状态 - 已启用客户端: {enabled_clients}")
+                total_clients = len(self.client_config_frame.client_manager.config.clients)
+                connected_count = len(enabled_clients)
 
-                if enabled_clients:
-                    self.connection_indicator.configure(text_color="green")
-                    self.connection_label.configure(text=f"已连接 ({len(enabled_clients)})")
-                    self.logger.info(f"连接状态更新为: 已连接 ({len(enabled_clients)})")
+                # 更新客户端数量显示
+                self.client_count_label.configure(text=f"客户端: {connected_count}/{total_clients}")
+
+                # 根据连接数量设置颜色
+                if connected_count == 0:
+                    self.client_count_label.configure(text_color="red")
+                elif connected_count == total_clients:
+                    self.client_count_label.configure(text_color="green")
                 else:
-                    # 检查所有客户端状态进行调试
-                    all_status = {}
-                    for client_config in self.client_config_frame.client_manager.config.clients:
-                        status = self.client_config_frame.client_manager.client_status.get(client_config.session_name)
-                        all_status[client_config.session_name] = status
-                    self.logger.info(f"所有客户端状态: {all_status}")
+                    self.client_count_label.configure(text_color="orange")
 
-                    self.connection_indicator.configure(text_color="red")
-                    self.connection_label.configure(text="未连接")
+                self.logger.debug(f"客户端连接状态: {connected_count}/{total_clients}")
             else:
-                self.logger.info("客户端管理器不存在或未初始化")
-                self.connection_indicator.configure(text_color="gray")
-                self.connection_label.configure(text="未配置")
+                self.client_count_label.configure(text="客户端: 0/0", text_color="gray")
+
         except Exception as e:
-            self.logger.error(f"更新连接状态失败: {e}")
+            self.logger.error(f"更新客户端数量状态失败: {e}")
+
+    def update_connection_status(self):
+        """更新连接状态（现在只更新客户端数量）"""
+        self.update_client_count_status()
 
     def schedule_connection_status_update(self):
         """定时更新连接状态"""
         try:
-            # 更新连接状态
+            # 更新客户端连接数量
             self.update_connection_status()
 
-            # 每5秒更新一次连接状态
+            # 更新网络连接状态（心跳检测）
+            self.update_network_status()
+
+            # 每5秒更新一次状态（心跳检测需要更频繁）
             if self.root:
                 self.root.after(5000, self.schedule_connection_status_update)
         except Exception as e:

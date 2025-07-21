@@ -624,7 +624,7 @@ class ClientConfigFrame:
         self.test_button.configure(state="disabled", text="测试中...")
 
         def test_real_connection():
-            """真实连接测试"""
+            """真实连接测试 - 使用get_me API测试所有客户端"""
             try:
                 results = {}  # 存储测试结果
 
@@ -632,23 +632,16 @@ class ClientConfigFrame:
                     if client_config.enabled:
                         session_name = client_config.session_name
 
-                        # 首先使用快速的同步测试方法
-                        success, message = self.client_manager.test_client_connection_sync(session_name)
-
-                        # 如果快速测试显示连接正常，但没有用户信息，尝试API测试
-                        if success and "状态已登录" in message:
-                            self.logger.info(f"客户端 {session_name}: 尝试API验证...")
-                            api_success, api_message = self.client_manager.test_client_connection_with_api(session_name)
-                            if api_success:
-                                success, message = api_success, api_message
-                            else:
-                                # API测试失败，但基本连接正常，保持原结果
-                                self.logger.debug(f"客户端 {session_name}: API测试失败，但基本连接正常")
-
+                        # 使用API测试方法，真正调用get_me
+                        success, message = self.client_manager.test_client_connection_with_api(session_name)
                         results[session_name] = (success, message)
 
                         # 记录测试结果
                         self.logger.info(f"客户端 {session_name}: {message}")
+                    else:
+                        # 未启用的客户端跳过测试
+                        results[session_name] = (False, "客户端未启用")
+                        self.logger.debug(f"客户端 {session_name}: 未启用，跳过测试")
 
                 # 在主线程中更新UI显示和恢复按钮
                 def update_ui():
@@ -659,16 +652,26 @@ class ClientConfigFrame:
                         # 恢复测试按钮
                         self.test_button.configure(state="normal", text="测试连接")
 
-                        # 显示测试结果摘要
-                        success_count = sum(1 for success, _ in results.values() if success)
-                        total_count = len(results)
+                        # 计算测试结果
+                        enabled_results = {k: v for k, v in results.items()
+                                         if any(c.session_name == k and c.enabled
+                                               for c in self.current_config.clients)}
+                        success_count = sum(1 for success, _ in enabled_results.values() if success)
+                        total_enabled = len(enabled_results)
 
-                        if success_count == total_count and total_count > 0:
-                            self.show_success(f"所有客户端连接正常 ({success_count}/{total_count})")
+                        # 显示测试结果摘要
+                        if total_enabled == 0:
+                            self.show_info("没有启用的客户端需要测试")
+                        elif success_count == total_enabled:
+                            self.show_success(f"所有客户端连接正常 ({success_count}/{total_enabled})")
                         elif success_count > 0:
-                            self.show_info(f"部分客户端连接正常 ({success_count}/{total_count})")
+                            self.show_info(f"部分客户端连接正常 ({success_count}/{total_enabled})")
                         else:
-                            self.show_error(f"所有客户端连接失败 ({success_count}/{total_count})")
+                            self.show_error(f"所有客户端连接失败 ({success_count}/{total_enabled})")
+
+                        # 更新主窗口状态栏中的客户端数量
+                        if hasattr(self, 'parent') and hasattr(self.parent, 'update_client_count_status'):
+                            self.parent.update_client_count_status()
 
                     except Exception as e:
                         self.logger.error(f"更新UI失败: {e}")
