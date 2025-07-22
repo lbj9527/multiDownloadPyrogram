@@ -17,6 +17,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def setup_logging(verbose: bool = False):
+    """配置日志系统"""
+    if verbose:
+        # 详细模式：显示所有日志
+        logging.getLogger("pyrogram").setLevel(logging.INFO)
+    else:
+        # 简洁模式：只显示警告和错误
+        logging.getLogger("pyrogram").setLevel(logging.WARNING)
+        logging.getLogger("pyrogram.connection").setLevel(logging.WARNING)
+        logging.getLogger("pyrogram.session").setLevel(logging.WARNING)
+        logging.getLogger("pyrogram.dispatcher").setLevel(logging.WARNING)
+        logging.getLogger("pyrogram.connection.transport").setLevel(logging.WARNING)
+
+# 默认使用简洁模式
+setup_logging(verbose=False)
+
 # ==================== 配置区域 ====================
 # Telegram API 配置
 API_ID = 25098445
