@@ -3,10 +3,12 @@
 核心功能：消息范围分片、异步任务管理、TgCrypto加速
 """
 import asyncio
+import os
+import re
 import time
 from pathlib import Path
 from typing import List, Dict, Tuple
-from pyrogram import Client, compose
+from pyrogram import Client
 from pyrogram.errors import FloodWait
 import logging
 
@@ -66,11 +68,13 @@ DOWNLOAD_DIR = Path("downloads")
 
 class MultiClientDownloader:
     """多客户端下载管理器"""
-    
+
     def __init__(self):
         self.clients: List[Client] = []
         self.download_dir = DOWNLOAD_DIR
         self.download_dir.mkdir(exist_ok=True)
+        self.channel_info = None  # 存储频道信息
+        self.channel_dir = None   # 缓存频道目录路径
         self.stats = {
             "total_messages": TOTAL_MESSAGES,
             "downloaded": 0,
@@ -97,6 +101,116 @@ class MultiClientDownloader:
         
         self.clients = clients
         return clients
+
+    async def get_channel_info(self, client: Client) -> Dict:
+        """获取频道信息"""
+        try:
+            chat = await client.get_chat(TARGET_CHANNEL)
+            username = f"@{chat.username}" if chat.username else f"id_{chat.id}"
+            title = chat.title or "Unknown"
+
+            # 清理文件名中的非法字符
+            safe_title = self.sanitize_filename(title)
+            folder_name = f"{username}-{safe_title}"
+
+            return {
+                "username": username,
+                "title": title,
+                "folder_name": folder_name,
+                "chat_id": chat.id
+            }
+        except Exception as e:
+            logger.error(f"获取频道信息失败: {e}")
+            return {
+                "username": f"@{TARGET_CHANNEL}",
+                "title": "Unknown",
+                "folder_name": f"@{TARGET_CHANNEL}-Unknown",
+                "chat_id": None
+            }
+
+    def sanitize_filename(self, filename: str) -> str:
+        """清理文件名中的非法字符"""
+        # 移除或替换Windows文件名中的非法字符
+        illegal_chars = r'[<>:"/\\|?*]'
+        safe_name = re.sub(illegal_chars, '_', filename)
+        # 移除首尾空格和点
+        safe_name = safe_name.strip('. ')
+        return safe_name[:100]  # 限制长度
+
+    def get_channel_directory(self) -> Path:
+        """获取频道专用目录（带缓存机制）"""
+        if not self.channel_info:
+            raise ValueError("频道信息未初始化")
+
+        # 如果已经创建过目录，直接返回缓存的路径
+        if self.channel_dir is not None:
+            return self.channel_dir
+
+        # 首次创建目录
+        self.channel_dir = self.download_dir / self.channel_info["folder_name"]
+
+        # 检查目录是否已存在
+        if self.channel_dir.exists():
+            logger.info(f"频道目录已存在: {self.channel_dir}")
+        else:
+            self.channel_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"频道目录已创建: {self.channel_dir}")
+
+        return self.channel_dir
+
+    def is_media_group_message(self, message) -> bool:
+        """检查消息是否属于媒体组"""
+        return hasattr(message, 'media_group_id') and message.media_group_id is not None
+
+    def generate_filename_by_type(self, message) -> str:
+        """根据消息类型生成文件名"""
+        # 检查是否为媒体组消息
+        if self.is_media_group_message(message):
+            # 媒体组消息：媒体组ID-消息ID.扩展名
+            base_name = f"{message.media_group_id}-{message.id}"
+        else:
+            # 单条消息：msg-消息ID.扩展名
+            base_name = f"msg-{message.id}"
+
+        # 获取文件扩展名
+        extension = self.get_file_extension(message)
+        return f"{base_name}{extension}"
+
+    def get_file_extension(self, message) -> str:
+        """获取消息媒体的文件扩展名"""
+        # 检查不同类型的媒体
+        if hasattr(message, 'document') and message.document:
+            # 文档类型
+            if hasattr(message.document, 'file_name') and message.document.file_name:
+                # 从原文件名提取扩展名
+                _, ext = os.path.splitext(message.document.file_name)
+                return ext if ext else self.get_extension_from_mime(message.document.mime_type)
+            else:
+                # 根据MIME类型推断扩展名
+                return self.get_extension_from_mime(getattr(message.document, 'mime_type', ''))
+
+        elif hasattr(message, 'video') and message.video:
+            return '.mp4'
+        elif hasattr(message, 'photo') and message.photo:
+            return '.jpg'
+        elif hasattr(message, 'audio') and message.audio:
+            if hasattr(message.audio, 'file_name') and message.audio.file_name:
+                _, ext = os.path.splitext(message.audio.file_name)
+                return ext if ext else '.mp3'
+            return '.mp3'
+        elif hasattr(message, 'voice') and message.voice:
+            return '.ogg'
+        elif hasattr(message, 'video_note') and message.video_note:
+            return '.mp4'
+        elif hasattr(message, 'animation') and message.animation:
+            if hasattr(message.animation, 'file_name') and message.animation.file_name:
+                _, ext = os.path.splitext(message.animation.file_name)
+                return ext if ext else '.gif'
+            return '.gif'
+        elif hasattr(message, 'sticker') and message.sticker:
+            return '.webp'
+        else:
+            return '.bin'
     
     def calculate_message_ranges(self) -> List[Tuple[int, int]]:
         """计算消息范围分片"""
@@ -124,7 +238,12 @@ class MultiClientDownloader:
         """下载指定范围的消息"""
         client_name = f"客户端{client_index + 1}"
         logger.info(f"{client_name} 开始下载消息范围: {start_id} - {end_id}")
-        
+
+        # 初始化频道信息（只需要一次）
+        if not self.channel_info:
+            self.channel_info = await self.get_channel_info(client)
+            logger.info(f"频道信息: {self.channel_info['username']} - {self.channel_info['title']}")
+
         downloaded = 0
         failed = 0
         
@@ -145,11 +264,19 @@ class MultiClientDownloader:
                     for message in messages:
                         if message and hasattr(message, 'media') and message.media:
                             try:
+                                # 检查是否为媒体组消息
+                                is_media_group = self.is_media_group_message(message)
+                                if is_media_group:
+                                    logger.info(f"{client_name} 检测到媒体组消息: {message.id} (组ID: {message.media_group_id})")
+
                                 # 下载媒体文件
-                                file_path = await self.download_media_file(client, message, client_index)
+                                file_path = await self.download_media_file(client, message)
                                 if file_path:
                                     downloaded += 1
-                                    logger.info(f"{client_name} 下载成功: {file_path.name}")
+                                    if is_media_group:
+                                        logger.info(f"{client_name} 媒体组文件下载成功: {file_path.name}")
+                                    else:
+                                        logger.info(f"{client_name} 下载成功: {file_path.name}")
                                 else:
                                     failed += 1
                             except Exception as e:
@@ -158,7 +285,7 @@ class MultiClientDownloader:
                         else:
                             # 非媒体消息，记录文本内容
                             if message:
-                                await self.save_text_message(message, client_index)
+                                await self.save_text_message(message)
                                 downloaded += 1
                     
                     # 更新统计
@@ -189,20 +316,19 @@ class MultiClientDownloader:
             "range": f"{start_id}-{end_id}"
         }
     
-    async def download_media_file(self, client: Client, message, client_index: int) -> Path:
-        """下载媒体文件"""
+    async def download_media_file(self, client: Client, message) -> Path:
+        """下载媒体文件到频道目录"""
         try:
-            # 创建客户端专用目录
-            client_dir = self.download_dir / f"client_{client_index + 1}"
-            client_dir.mkdir(parents=True, exist_ok=True)
+            # 获取频道目录（带缓存）
+            channel_dir = self.get_channel_directory()
 
-            # 智能生成文件名
-            file_name = self.generate_filename(message)
+            # 根据消息类型生成文件名
+            file_name = self.generate_filename_by_type(message)
 
             # 下载文件
             file_path = await client.download_media(
                 message,
-                file_name=str(client_dir / file_name)
+                file_name=str(channel_dir / file_name)
             )
 
             return Path(file_path) if file_path else None
@@ -211,61 +337,7 @@ class MultiClientDownloader:
             logger.error(f"下载媒体文件失败: {e}")
             return None
 
-    def generate_filename(self, message) -> str:
-        """智能生成文件名"""
-        base_name = f"msg_{message.id}"
 
-        # 检查不同类型的媒体
-        if hasattr(message, 'document') and message.document:
-            # 文档类型
-            if hasattr(message.document, 'file_name') and message.document.file_name:
-                return f"{base_name}_{message.document.file_name}"
-            else:
-                # 根据MIME类型推断扩展名
-                mime_type = getattr(message.document, 'mime_type', '')
-                ext = self.get_extension_from_mime(mime_type)
-                return f"{base_name}{ext}"
-
-        elif hasattr(message, 'video') and message.video:
-            # 视频类型
-            if hasattr(message.video, 'file_name') and message.video.file_name:
-                return f"{base_name}_{message.video.file_name}"
-            else:
-                return f"{base_name}.mp4"
-
-        elif hasattr(message, 'photo') and message.photo:
-            # 照片类型
-            return f"{base_name}.jpg"
-
-        elif hasattr(message, 'audio') and message.audio:
-            # 音频类型
-            if hasattr(message.audio, 'file_name') and message.audio.file_name:
-                return f"{base_name}_{message.audio.file_name}"
-            else:
-                return f"{base_name}.mp3"
-
-        elif hasattr(message, 'voice') and message.voice:
-            # 语音类型
-            return f"{base_name}.ogg"
-
-        elif hasattr(message, 'video_note') and message.video_note:
-            # 视频笔记类型
-            return f"{base_name}.mp4"
-
-        elif hasattr(message, 'animation') and message.animation:
-            # 动画类型
-            if hasattr(message.animation, 'file_name') and message.animation.file_name:
-                return f"{base_name}_{message.animation.file_name}"
-            else:
-                return f"{base_name}.gif"
-
-        elif hasattr(message, 'sticker') and message.sticker:
-            # 贴纸类型
-            return f"{base_name}.webp"
-
-        else:
-            # 未知类型，使用默认扩展名
-            return f"{base_name}.bin"
 
     def get_extension_from_mime(self, mime_type: str) -> str:
         """根据MIME类型获取文件扩展名"""
@@ -292,16 +364,18 @@ class MultiClientDownloader:
         }
         return mime_to_ext.get(mime_type, '.bin')
     
-    async def save_text_message(self, message, client_index: int):
-        """保存文本消息"""
+    async def save_text_message(self, message):
+        """保存文本消息到频道目录"""
         try:
-            client_dir = self.download_dir / f"client_{client_index + 1}"
-            client_dir.mkdir(parents=True, exist_ok=True)
-
-            text_file = client_dir / "messages.txt"
+            channel_dir = self.get_channel_directory()
+            text_file = channel_dir / "messages.txt"
 
             with open(text_file, "a", encoding="utf-8") as f:
-                f.write(f"消息ID: {message.id}\n")
+                # 检查是否为媒体组消息
+                if self.is_media_group_message(message):
+                    f.write(f"消息ID: {message.id} (媒体组: {message.media_group_id})\n")
+                else:
+                    f.write(f"消息ID: {message.id}\n")
                 f.write(f"时间: {message.date}\n")
                 f.write(f"内容: {message.text or '无文本内容'}\n")
                 f.write("-" * 50 + "\n")
