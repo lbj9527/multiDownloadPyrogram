@@ -325,20 +325,20 @@ class MultiClientDownloader:
         self.stats["start_time"] = time.time()
         
         try:
-            # 使用compose并发运行客户端
+            # 使用 asyncio.gather() 并发运行多个客户端任务
             async def client_task(client, message_range, index):
-                async with client:
+                async with client:  # 独立管理每个客户端的生命周期
                     return await self.download_messages_range(
                         client, message_range[0], message_range[1], index
                     )
-            
-            # 创建并发任务
+
+            # 创建并发任务列表
             tasks = [
                 client_task(clients[i], message_ranges[i], i)
                 for i in range(len(clients))
             ]
-            
-            # 等待所有任务完成
+
+            # 并发执行所有客户端任务
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # 处理结果
