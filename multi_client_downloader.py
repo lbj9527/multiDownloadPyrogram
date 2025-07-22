@@ -7,8 +7,8 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import List, Dict, Tuple
-from pyrogram import Client
+from typing import List, Dict, Tuple, Optional
+from pyrogram.client import Client
 from pyrogram.errors import FloodWait
 import logging
 
@@ -43,8 +43,8 @@ PHONE_NUMBER = "+8618758361347"
 
 # 下载配置
 TARGET_CHANNEL = "csdkl"  # https://t.me/csdkl
-START_MESSAGE_ID = 71986
-END_MESSAGE_ID = 72155
+START_MESSAGE_ID = 71886
+END_MESSAGE_ID = 71985
 TOTAL_MESSAGES = END_MESSAGE_ID - START_MESSAGE_ID + 1
 
 # 会话文件配置
@@ -297,7 +297,7 @@ class MultiClientDownloader:
                     
                 except FloodWait as e:
                     logger.warning(f"{client_name} 遇到限流，等待 {e.value} 秒")
-                    await asyncio.sleep(e.value)
+                    await asyncio.sleep(float(e.value))
                 except Exception as e:
                     logger.error(f"{client_name} 批量获取消息失败: {e}")
                     failed += len(batch_ids)
@@ -316,7 +316,7 @@ class MultiClientDownloader:
             "range": f"{start_id}-{end_id}"
         }
     
-    async def download_media_file(self, client: Client, message) -> Path:
+    async def download_media_file(self, client: Client, message) -> Optional[Path]:
         """下载媒体文件到频道目录"""
         try:
             # 获取频道目录（带缓存）
@@ -336,7 +336,6 @@ class MultiClientDownloader:
         except Exception as e:
             logger.error(f"下载媒体文件失败: {e}")
             return None
-
 
 
     def get_extension_from_mime(self, mime_type: str) -> str:

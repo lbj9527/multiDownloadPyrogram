@@ -6,7 +6,7 @@ import asyncio
 import os
 import time
 from pathlib import Path
-from pyrogram import Client
+from pyrogram.client import Client
 from pyrogram.errors import FloodWait
 
 
