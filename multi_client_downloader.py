@@ -43,8 +43,8 @@ PHONE_NUMBER = "+8618758361347"
 
 # 下载配置
 TARGET_CHANNEL = "csdkl"  # https://t.me/csdkl
-START_MESSAGE_ID = 71886
-END_MESSAGE_ID = 71985
+START_MESSAGE_ID = 71986
+END_MESSAGE_ID = 72155
 TOTAL_MESSAGES = END_MESSAGE_ID - START_MESSAGE_ID + 1
 
 # 会话文件配置
@@ -251,8 +251,8 @@ class MultiClientDownloader:
             # 获取消息范围内的所有消息ID
             message_ids = list(range(start_id, end_id + 1))
             
-            # 批量获取消息（每次最多100条）
-            batch_size = 100
+            # 批量获取消息（每次最多200条，官方限制）
+            batch_size = 200
             for i in range(0, len(message_ids), batch_size):
                 batch_ids = message_ids[i:i + batch_size]
                 
