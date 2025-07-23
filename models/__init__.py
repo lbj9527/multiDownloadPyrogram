@@ -5,7 +5,7 @@
 
 from .download_task import DownloadTask, TaskRange, TaskResult, TaskStatus
 from .client_info import ClientInfo, ClientStatus
-from .file_info import FileInfo, MediaInfo, CompressionInfo, FileType, CompressionType
+from .file_info import FileInfo, MediaInfo, FileType
 
 __all__ = [
     'DownloadTask',
@@ -16,7 +16,5 @@ __all__ = [
     'ClientStatus',
     'FileInfo',
     'MediaInfo',
-    'CompressionInfo',
-    'FileType',
-    'CompressionType'
+    'FileType'
 ]

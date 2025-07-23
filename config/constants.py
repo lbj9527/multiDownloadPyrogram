@@ -15,7 +15,6 @@ DEFAULT_CONCURRENT_CLIENTS = 3
 # 文件大小常量 (字节)
 MB = 1024 * 1024
 GB = 1024 * MB
-DEFAULT_COMPRESS_THRESHOLD = 50 * MB
 MAX_FILE_SIZE = 2 * GB
 
 # 支持的媒体类型
@@ -82,24 +81,7 @@ FILE_TYPE_CATEGORIES: Dict[str, Set[str]] = {
     'archives': {'.zip', '.rar', '.7z', '.gz', '.tar'},
 }
 
-# 压缩设置
-COMPRESSION_SETTINGS: Dict[str, Dict] = {
-    'zip': {
-        'extension': '.zip',
-        'compression_level': 6,  # 0-9, 6是平衡点
-        'method': 'deflated'
-    },
-    '7z': {
-        'extension': '.7z',
-        'compression_level': 5,  # 0-9
-        'method': 'lzma2'
-    },
-    'gzip': {
-        'extension': '.gz',
-        'compression_level': 6,
-        'method': 'gzip'
-    }
-}
+
 
 # 错误重试设置
 RETRY_SETTINGS: Dict[str, int] = {
@@ -120,7 +102,7 @@ MAX_TIMEOUT = 300  # 秒
 CONNECTION_POOL_SIZE = 10
 
 # 存储模式
-STORAGE_MODES: Set[str] = {'raw', 'compressed', 'hybrid'}
+STORAGE_MODES: Set[str] = {'raw'}
 
 # 任务状态
 TASK_STATUS = {

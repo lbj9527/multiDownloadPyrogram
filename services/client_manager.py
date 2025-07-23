@@ -6,7 +6,7 @@
 import asyncio
 from typing import List, Dict, Optional, Any
 from pathlib import Path
-from pyrogram import Client
+from pyrogram.client import Client
 
 from models import ClientInfo, ClientStatus
 from config import app_settings

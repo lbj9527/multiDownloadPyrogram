@@ -4,8 +4,8 @@
 """
 
 import os
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Union
 from pathlib import Path
 
 
@@ -15,7 +15,7 @@ class TelegramConfig:
     api_id: int
     api_hash: str
     phone_number: str
-    proxy: Optional[Dict[str, str]] = None
+    proxy: Optional[Dict[str, Union[str, int]]] = None
 
 
 @dataclass
@@ -37,18 +37,9 @@ class DownloadConfig:
 @dataclass
 class StorageConfig:
     """存储配置"""
-    storage_mode: str = "hybrid"  # "raw", "compressed", "hybrid"
-    compress_threshold_mb: int = 50
+    storage_mode: str = "raw"  # 只支持原始存储模式
     archive_after_days: int = 30
     cleanup_after_days: int = 90
-    prefer_accessibility: bool = True
-    
-    file_type_rules: Dict[str, Dict] = field(default_factory=lambda: {
-        "images": {"compress": False, "max_size_mb": 10},
-        "videos": {"compress": False, "max_size_mb": 100},
-        "documents": {"compress": True, "max_size_mb": 5},
-        "audio": {"compress": False, "max_size_mb": 20}
-    })
 
 
 @dataclass
@@ -79,7 +70,7 @@ class AppSettings:
         
         self.download = DownloadConfig(
             target_channel=os.getenv("TARGET_CHANNEL", "csdkl"),
-            start_message_id=int(os.getenv("START_MESSAGE_ID", "71986")),
+            start_message_id=int(os.getenv("START_MESSAGE_ID", "72006")),
             end_message_id=int(os.getenv("END_MESSAGE_ID", "72155")),
             batch_size=int(os.getenv("BATCH_SIZE", "200")),
             max_concurrent_clients=int(os.getenv("MAX_CLIENTS", "3"))
