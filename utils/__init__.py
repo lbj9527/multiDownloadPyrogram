@@ -6,6 +6,8 @@
 from .file_utils import *
 from .logging_utils import *
 from .async_utils import *
+from .decorators import *
+from .error_handling import *
 
 __all__ = [
     # file_utils
@@ -28,5 +30,18 @@ __all__ = [
     'retry_async',
     'batch_process',
     'safe_gather',
-    'rate_limit'
+    'rate_limit',
+
+    # decorators
+    'safe_execute',
+    'retry_with_backoff',
+    'log_execution_time',
+    'robust_operation',
+
+    # error_handling
+    'handle_exception',
+    'handle_error_with_context',
+    'ErrorCategory',
+    'ErrorSeverity',
+    'global_error_handler'
 ]

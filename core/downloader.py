@@ -7,7 +7,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from pyrogram import Client
+from pyrogram.client import Client
 from pyrogram.errors import FloodWait
 
 from models import DownloadTask, TaskRange, TaskResult, TaskStatus
