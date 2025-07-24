@@ -95,10 +95,13 @@ class TelegramDownloaderApp:
     
     def _display_results(self, results, elapsed_time: float):
         """显示下载结果"""
-        logger.info("\n" + "=" * 60)
-        logger.info("📊 下载结果统计")
-        logger.info("=" * 60)
+        # 防止重复调用
+        if hasattr(self, '_results_displayed'):
+            return
+        self._results_displayed = True
 
+        # 收集所有有效结果
+        valid_results = []
         total_downloaded = 0
         total_failed = 0
 
@@ -111,12 +114,26 @@ class TelegramDownloaderApp:
                 total_downloaded += downloaded
                 total_failed += failed
 
-                logger.info(f"{client_name}: {downloaded} 成功, {failed} 失败")
+                valid_results.append({
+                    "client": client_name,
+                    "downloaded": downloaded,
+                    "failed": failed
+                })
+
+        # 一次性输出所有统计信息
+        logger.info("\n" + "=" * 60)
+        logger.info("📊 下载结果统计")
+        logger.info("=" * 60)
+
+        # 输出每个客户端的结果
+        for result in valid_results:
+            logger.info(f"{result['client']}: {result['downloaded']} 成功, {result['failed']} 失败")
 
         # 计算总体统计
         total_messages = app_settings.download.end_message_id - app_settings.download.start_message_id + 1
         success_rate = (total_downloaded / total_messages * 100) if total_messages > 0 else 0
 
+        # 输出总计信息
         logger.info("-" * 60)
         logger.info(f"总计: {total_downloaded} 成功, {total_failed} 失败")
         logger.info(f"成功率: {success_rate:.1f}%")

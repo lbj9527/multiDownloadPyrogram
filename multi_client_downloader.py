@@ -12,15 +12,20 @@ from pyrogram.client import Client
 from pyrogram.errors import FloodWait
 import logging
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
+# 配置日志 - 避免重复配置
 def setup_logging(verbose: bool = False):
     """配置日志系统"""
+    # 获取根日志记录器
+    root_logger = logging.getLogger()
+
+    # 如果已经配置过，就不重复配置
+    if not root_logger.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+
+    # 配置Pyrogram日志级别
     if verbose:
         # 详细模式：显示所有日志
         logging.getLogger("pyrogram").setLevel(logging.INFO)
@@ -34,6 +39,7 @@ def setup_logging(verbose: bool = False):
 
 # 默认使用简洁模式
 setup_logging(verbose=False)
+logger = logging.getLogger(__name__)
 
 # ==================== 配置区域 ====================
 # Telegram API 配置
@@ -424,28 +430,37 @@ class MultiClientDownloader:
         """处理下载结果"""
         total_downloaded = 0
         total_failed = 0
-        
-        logger.info("\n" + "="*60)
-        logger.info("📊 下载结果统计")
-        logger.info("="*60)
-        
+        client_results = []
+
+        # 收集所有有效结果
         for result in results:
             if isinstance(result, dict):
                 total_downloaded += result["downloaded"]
                 total_failed += result["failed"]
-                logger.info(f"{result['client']}: {result['downloaded']} 成功, {result['failed']} 失败 (范围: {result['range']})")
+                client_results.append(result)
             else:
                 logger.error(f"任务异常: {result}")
-        
+
+        # 一次性输出所有统计信息，避免重复
+        logger.info("\n" + "="*60)
+        logger.info("📊 下载结果统计")
+        logger.info("="*60)
+
+        # 输出每个客户端的结果
+        for result in client_results:
+            logger.info(f"{result['client']}: {result['downloaded']} 成功, {result['failed']} 失败 (范围: {result['range']})")
+
         # 计算总体统计
         elapsed_time = time.time() - self.stats["start_time"]
         success_rate = (total_downloaded / TOTAL_MESSAGES * 100) if TOTAL_MESSAGES > 0 else 0
-        
+
+        # 输出总计信息
         logger.info("-" * 60)
         logger.info(f"总计: {total_downloaded} 成功, {total_failed} 失败")
         logger.info(f"成功率: {success_rate:.1f}%")
         logger.info(f"耗时: {elapsed_time:.1f} 秒")
-        logger.info(f"平均速度: {total_downloaded / elapsed_time:.1f} 条/秒")
+        if elapsed_time > 0:
+            logger.info(f"平均速度: {total_downloaded / elapsed_time:.1f} 条/秒")
         logger.info(f"下载目录: {self.download_dir.absolute()}")
         logger.info("="*60)
 

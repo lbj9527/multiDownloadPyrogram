@@ -14,6 +14,9 @@ from datetime import datetime
 from config.constants import LOG_LEVELS, DEFAULT_LOG_FORMAT, DEFAULT_LOG_FILE
 
 
+# 全局标志，防止重复配置
+_logging_configured = False
+
 def setup_logging(
     level: str = "INFO",
     format_string: str = DEFAULT_LOG_FORMAT,
@@ -24,7 +27,7 @@ def setup_logging(
 ) -> logging.Logger:
     """
     设置日志系统
-    
+
     Args:
         level: 日志级别
         format_string: 日志格式
@@ -32,41 +35,50 @@ def setup_logging(
         console_enabled: 是否启用控制台输出
         file_enabled: 是否启用文件输出
         verbose_pyrogram: 是否显示Pyrogram详细日志
-        
+
     Returns:
         配置好的logger
     """
+    global _logging_configured
+
+    # 如果已经配置过，就不重复配置
+    if _logging_configured:
+        return logging.getLogger()
+
     # 验证日志级别
     if level.upper() not in LOG_LEVELS:
         level = "INFO"
-    
+
     # 获取根logger
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, level.upper()))
-    
+
     # 清除现有的handlers
     root_logger.handlers.clear()
-    
+
     # 创建formatter
     formatter = logging.Formatter(format_string)
-    
+
     # 控制台handler
     if console_enabled:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(getattr(logging, level.upper()))
         console_handler.setFormatter(formatter)
         root_logger.addHandler(console_handler)
-    
+
     # 文件handler
     if file_enabled and file_path:
         # 确保日志目录存在
         log_file = Path(file_path)
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(getattr(logging, level.upper()))
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
+
+    # 标记为已配置
+    _logging_configured = True
     
     # 配置Pyrogram日志
     pyrogram_level = logging.INFO if verbose_pyrogram else logging.WARNING
