@@ -5,22 +5,25 @@
 
 from typing import Optional, Any
 from pathlib import Path
+from io import BytesIO
 from pyrogram import Client
 
 from models import MediaInfo, FileInfo, FileType
 from utils import get_logger, sanitize_filename
 from .file_processor import FileProcessor
+from config import app_settings
 
 logger = get_logger(__name__)
 
 
 class MessageHandler:
     """消息处理器"""
-    
-    def __init__(self, file_processor: FileProcessor):
+
+    def __init__(self, file_processor: FileProcessor, upload_service=None):
         self.file_processor = file_processor
+        self.upload_service = upload_service
         self.supported_media_types = {
-            'photo', 'video', 'audio', 'voice', 
+            'photo', 'video', 'audio', 'voice',
             'video_note', 'animation', 'document', 'sticker'
         }
     
@@ -42,13 +45,101 @@ class MessageHandler:
             是否处理成功
         """
         try:
+            # 根据存储模式选择处理方式
+            storage_mode = app_settings.storage.storage_mode
+
+            if storage_mode == "upload":
+                return await self._process_message_upload_mode(client, message, channel)
+            elif storage_mode == "hybrid":
+                return await self._process_message_hybrid_mode(client, message, channel)
+            else:
+                # 默认raw模式
+                return await self._process_message_raw_mode(client, message, channel)
+
+        except Exception as e:
+            logger.error(f"处理消息 {message.id} 失败: {e}")
+            return False
+
+    async def _process_message_raw_mode(
+        self,
+        client: Client,
+        message: Any,
+        channel: str
+    ) -> bool:
+        """原始模式：下载到本地"""
+        try:
             if self.has_media(message):
                 return await self._process_media_message(client, message, channel)
             else:
-                # 处理文本消息（包括没有媒体的消息）
                 return await self._process_text_message(message, channel, client)
         except Exception as e:
-            logger.error(f"处理消息 {message.id} 失败: {e}")
+            logger.error(f"原始模式处理消息失败: {e}")
+            return False
+
+    async def _process_message_upload_mode(
+        self,
+        client: Client,
+        message: Any,
+        channel: str
+    ) -> bool:
+        """上传模式：内存下载后上传"""
+        try:
+            logger.info(f"🔄 上传模式处理消息: {message.id}")
+
+            if not self.upload_service:
+                logger.error("上传服务未初始化")
+                return False
+
+            if self.has_media(message):
+                logger.info(f"📥 内存下载媒体消息: {message.id}")
+                # 内存下载媒体文件
+                media_data = await self._download_media_to_memory(client, message)
+                if media_data:
+                    logger.info(f"📤 上传媒体消息: {message.id}, 大小: {len(media_data)} 字节")
+                    return await self.upload_service.upload_message(
+                        client, message, media_data=media_data
+                    )
+                else:
+                    logger.error(f"❌ 内存下载失败: {message.id}")
+                    return False
+            else:
+                logger.info(f"📤 上传文本消息: {message.id}")
+                # 直接上传文本消息
+                return await self.upload_service.upload_message(client, message)
+
+        except Exception as e:
+            logger.error(f"上传模式处理消息失败: {e}")
+            return False
+
+    async def _process_message_hybrid_mode(
+        self,
+        client: Client,
+        message: Any,
+        channel: str
+    ) -> bool:
+        """混合模式：既下载到本地又上传"""
+        try:
+            # 先执行原始模式下载
+            raw_success = await self._process_message_raw_mode(client, message, channel)
+
+            # 再执行上传模式
+            upload_success = False
+            if self.upload_service:
+                if self.has_media(message):
+                    # 使用已下载的文件进行上传
+                    file_path = await self._get_downloaded_file_path(client, message, channel)
+                    if file_path and file_path.exists():
+                        upload_success = await self.upload_service.upload_message(
+                            client, message, file_path=file_path
+                        )
+                else:
+                    upload_success = await self.upload_service.upload_message(client, message)
+
+            # 只要有一个成功就算成功
+            return raw_success or upload_success
+
+        except Exception as e:
+            logger.error(f"混合模式处理消息失败: {e}")
             return False
     
     def has_media(self, message: Any) -> bool:
@@ -288,6 +379,72 @@ class MessageHandler:
 
         except Exception as e:
             logger.error(f"下载媒体文件失败: {e}")
+            return None
+
+    async def _download_media_to_memory(
+        self,
+        client: Client,
+        message: Any
+    ) -> Optional[bytes]:
+        """
+        下载媒体文件到内存
+
+        Args:
+            client: Pyrogram客户端
+            message: 消息对象
+
+        Returns:
+            文件字节数据
+        """
+        try:
+            # 使用Pyrogram的in_memory参数直接下载到内存
+            file_like_object = await client.download_media(message, in_memory=True)
+
+            if file_like_object:
+                # 获取字节数据
+                media_data = file_like_object.getvalue()
+                file_like_object.close()
+
+                logger.debug(f"消息 {message.id} 媒体文件已下载到内存，大小: {len(media_data)} 字节")
+                return media_data
+
+            return None
+
+        except Exception as e:
+            logger.error(f"内存下载媒体文件失败: {e}")
+            return None
+
+    async def _get_downloaded_file_path(
+        self,
+        client: Client,
+        message: Any,
+        channel: str
+    ) -> Optional[Path]:
+        """
+        获取已下载文件的路径
+
+        Args:
+            client: Pyrogram客户端
+            message: 消息对象
+            channel: 频道名称
+
+        Returns:
+            文件路径
+        """
+        try:
+            # 获取频道目录
+            channel_dir = await self.file_processor.get_channel_directory(channel, client)
+
+            # 生成文件名
+            file_name = self._generate_filename(message)
+
+            # 构建文件路径
+            file_path = channel_dir / file_name
+
+            return file_path if file_path.exists() else None
+
+        except Exception as e:
+            logger.error(f"获取下载文件路径失败: {e}")
             return None
     
     def _generate_filename(self, message: Any) -> str:

@@ -102,7 +102,7 @@ MAX_TIMEOUT = 300  # 秒
 CONNECTION_POOL_SIZE = 10
 
 # 存储模式
-STORAGE_MODES: Set[str] = {'raw'}
+STORAGE_MODES: Set[str] = {'raw', 'upload', 'hybrid'}
 
 # 任务状态
 TASK_STATUS = {

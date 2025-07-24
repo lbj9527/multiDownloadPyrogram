@@ -248,6 +248,16 @@ class ConfigValidator:
             storage = config.storage
             all_errors.extend(cls.validate_storage_config(storage.storage_mode))
 
+        # 验证上传配置
+        if hasattr(config, 'upload'):
+            upload = config.upload
+            all_errors.extend(cls.validate_upload_config(
+                upload.enabled,
+                upload.target_channel,
+                upload.upload_delay,
+                upload.max_retries
+            ))
+
         # 验证日志配置
         if hasattr(config, 'logging'):
             logging_config = config.logging
@@ -259,6 +269,29 @@ class ConfigValidator:
             ))
 
         return all_errors
+
+    @classmethod
+    def validate_upload_config(
+        cls,
+        enabled: bool,
+        target_channel: str,
+        upload_delay: float,
+        max_retries: int
+    ) -> List[str]:
+        """验证上传配置"""
+        errors = []
+
+        if enabled:
+            if not target_channel or not target_channel.strip():
+                errors.append("启用上传功能时必须指定目标频道")
+
+            if upload_delay < 0.1 or upload_delay > 10.0:
+                errors.append("上传延迟必须在0.1-10.0秒之间")
+
+            if max_retries < 1 or max_retries > 10:
+                errors.append("最大重试次数必须在1-10之间")
+
+        return errors
 
 
 # 便捷验证函数

@@ -87,6 +87,15 @@ if PYDANTIC_AVAILABLE:
         download_directory: str = Field("downloads", description="下载目录")
         session_directory: str = Field("sessions", description="会话文件目录")
 
+    class UploadConfig(ConfigBase):
+        """上传配置"""
+        enabled: bool = Field(False, description="是否启用上传功能")
+        target_channel: str = Field("", description="上传目标频道")
+        preserve_media_groups: bool = Field(True, description="保持媒体组格式")
+        preserve_captions: bool = Field(True, description="保持原始说明文字")
+        upload_delay: float = Field(1.0, description="上传间隔（秒）", ge=0.1, le=10.0)
+        max_retries: int = Field(3, description="最大重试次数", ge=1, le=10)
+
         def __post_init__(self):
             """后初始化验证"""
             if hasattr(self, 'start_message_id') and hasattr(self, 'end_message_id'):
@@ -103,8 +112,16 @@ else:
         max_concurrent_clients: int = 3
         download_directory: str = "downloads"
         session_directory: str = "sessions"
-    download_directory: str = "downloads"
-    session_directory: str = "sessions"
+
+    @dataclass
+    class UploadConfig:
+        """上传配置"""
+        enabled: bool = False
+        target_channel: str = ""
+        preserve_media_groups: bool = True
+        preserve_captions: bool = True
+        upload_delay: float = 1.0
+        max_retries: int = 3
     
     @property
     def total_messages(self) -> int:
@@ -114,7 +131,7 @@ else:
 if PYDANTIC_AVAILABLE:
     class StorageConfig(ConfigBase):
         """存储配置"""
-        storage_mode: str = Field("raw", description="存储模式")
+        storage_mode: str = Field("upload", description="存储模式 (raw/upload/hybrid)")
         archive_after_days: int = Field(30, description="归档天数", ge=1)
         cleanup_after_days: int = Field(90, description="清理天数", ge=1)
 
@@ -130,7 +147,7 @@ else:
     @dataclass
     class StorageConfig:
         """存储配置"""
-        storage_mode: str = "raw"  # 只支持原始存储模式
+        storage_mode: str = "upload"  # 支持 raw/upload/hybrid 模式
         archive_after_days: int = 30
         cleanup_after_days: int = 90
 
@@ -163,7 +180,7 @@ class AppSettings:
 
         download_data = {
             "target_channel": os.getenv("TARGET_CHANNEL", "csdkl"),
-            "start_message_id": int(os.getenv("START_MESSAGE_ID", "72006")),
+            "start_message_id": int(os.getenv("START_MESSAGE_ID", "72126")),
             "end_message_id": int(os.getenv("END_MESSAGE_ID", "72155")),
             "batch_size": int(os.getenv("BATCH_SIZE", "200")),
             "max_concurrent_clients": int(os.getenv("MAX_CLIENTS", "3")),
@@ -171,15 +188,26 @@ class AppSettings:
             "session_directory": os.getenv("SESSION_DIR", "sessions")
         }
 
+        upload_data = {
+            "enabled": os.getenv("UPLOAD_ENABLED", "true").lower() == "true",  # 默认启用
+            "target_channel": os.getenv("UPLOAD_TARGET_CHANNEL", "@wghrwf"),  # 默认目标频道
+            "preserve_media_groups": os.getenv("PRESERVE_MEDIA_GROUPS", "true").lower() == "true",
+            "preserve_captions": os.getenv("PRESERVE_CAPTIONS", "true").lower() == "true",
+            "upload_delay": float(os.getenv("UPLOAD_DELAY", "1.5")),  # 默认1.5秒延迟
+            "max_retries": int(os.getenv("UPLOAD_MAX_RETRIES", "3"))
+        }
+
         # 创建配置对象
         if PYDANTIC_AVAILABLE:
             self.telegram = TelegramConfig(**telegram_data)
             self.download = DownloadConfig(**download_data)
+            self.upload = UploadConfig(**upload_data)
             self.storage = StorageConfig()
             self.logging = LoggingConfig()
         else:
             self.telegram = TelegramConfig(**telegram_data)
             self.download = DownloadConfig(**download_data)
+            self.upload = UploadConfig(**upload_data)
             self.storage = StorageConfig()
             self.logging = LoggingConfig()
         

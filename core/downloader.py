@@ -20,10 +20,11 @@ logger = get_logger(__name__)
 
 class TelegramDownloader:
     """Telegram下载器"""
-    
-    def __init__(self, file_processor: FileProcessor):
+
+    def __init__(self, file_processor: FileProcessor, upload_service=None):
         self.file_processor = file_processor
-        self.message_handler = MessageHandler(file_processor)
+        self.upload_service = upload_service
+        self.message_handler = MessageHandler(file_processor, upload_service)
         self.stats = {
             "start_time": 0,
             "total_downloaded": 0,

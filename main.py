@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from config import app_settings
 from utils import setup_logging, get_logger
-from services import ClientManager
+from services import ClientManager, UploadService
 from core import TelegramDownloader, FileProcessor
 from interfaces import DownloadInterface
 
@@ -21,11 +21,18 @@ logger = get_logger(__name__)
 
 class TelegramDownloaderApp:
     """Telegram下载器应用程序"""
-    
+
     def __init__(self):
         self.client_manager = ClientManager()
         self.file_processor = FileProcessor()
-        self.downloader = TelegramDownloader(self.file_processor)
+
+        # 初始化上传服务（如果启用）
+        self.upload_service = None
+        if app_settings.upload.enabled:
+            self.upload_service = UploadService()
+            logger.info("✅ 上传服务已启用")
+
+        self.downloader = TelegramDownloader(self.file_processor, self.upload_service)
         self.download_interface = DownloadInterface(
             self.client_manager,
             self.downloader
@@ -88,6 +95,12 @@ class TelegramDownloaderApp:
 
             # 显示结果
             self._display_results(results, elapsed_time)
+
+            # 完成剩余的上传任务（如果启用了上传）
+            if self.upload_service:
+                logger.info("🔄 完成剩余的上传任务...")
+                await self.upload_service.finalize_upload()
+                self._display_upload_stats()
 
         except Exception as e:
             logger.error(f"❌ 下载任务失败: {e}")
@@ -165,7 +178,25 @@ class TelegramDownloaderApp:
             
         except Exception as e:
             logger.error(f"❌ 清理资源失败: {e}")
-    
+
+    def _display_upload_stats(self):
+        """显示上传统计信息"""
+        if not self.upload_service:
+            return
+
+        logger.info("📤 上传统计信息:")
+        stats = self.upload_service.get_upload_stats()
+
+        logger.info(f"总上传文件: {stats['total_uploaded']}")
+        logger.info(f"上传失败: {stats['total_failed']}")
+        logger.info(f"媒体组上传: {stats['media_groups_uploaded']}")
+
+        if stats['total_uploaded'] > 0:
+            success_rate = (stats['total_uploaded'] / (stats['total_uploaded'] + stats['total_failed'])) * 100
+            logger.info(f"上传成功率: {success_rate:.1f}%")
+
+        logger.info("=" * 60)
+
     async def run(self):
         """运行应用程序"""
         try:
