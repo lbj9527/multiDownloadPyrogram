@@ -306,3 +306,66 @@ class TelegramDownloader:
         self.stats["total_downloaded"] += downloaded
         self.stats["total_failed"] += failed
         self.stats["total_processed"] += downloaded + failed
+
+    async def download_message_list(
+        self,
+        client: Client,
+        channel: str,
+        messages: List[Any]
+    ) -> Dict[str, Any]:
+        """
+        下载消息列表
+
+        Args:
+            client: Pyrogram客户端
+            channel: 频道名称
+            messages: 消息列表
+
+        Returns:
+            下载结果
+        """
+        logger.info(f"开始处理消息列表，共 {len(messages)} 条消息")
+
+        downloaded = 0
+        failed = 0
+
+        try:
+            for message in messages:
+                if message is None:
+                    failed += 1
+                    continue
+
+                try:
+                    # 使用消息处理器处理单条消息
+                    success = await self.message_handler.process_message(
+                        client, message, channel
+                    )
+
+                    if success:
+                        downloaded += 1
+                    else:
+                        failed += 1
+
+                except Exception as e:
+                    logger.error(f"处理消息 {message.id if message else 'None'} 失败: {e}")
+                    failed += 1
+
+            # 更新统计
+            self.update_stats(downloaded, failed)
+
+            logger.info(f"消息列表处理完成: {downloaded} 成功, {failed} 失败")
+
+            return {
+                "downloaded": downloaded,
+                "failed": failed,
+                "total": len(messages)
+            }
+
+        except Exception as e:
+            logger.error(f"处理消息列表失败: {e}")
+            return {
+                "downloaded": downloaded,
+                "failed": failed + len(messages) - downloaded,
+                "total": len(messages),
+                "error": str(e)
+            }

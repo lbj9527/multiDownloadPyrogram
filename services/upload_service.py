@@ -20,10 +20,11 @@ logger = get_logger(__name__)
 
 class UploadService:
     """上传服务类"""
-    
+
     def __init__(self):
         self.upload_config = app_settings.upload
         self.media_group_cache: Dict[str, List[Dict]] = {}
+        self.current_media_group_id: Optional[str] = None  # 当前处理的媒体组ID
         self.upload_stats = {
             "total_uploaded": 0,
             "total_failed": 0,
@@ -63,10 +64,13 @@ class UploadService:
             # 检查是否为媒体组消息
             if self._is_media_group_message(original_message):
                 logger.info(f"📦 处理媒体组消息: {original_message.id}, 组ID: {original_message.media_group_id}")
-                return await self._handle_media_group_message(
+                return await self._handle_media_group_message_sequential(
                     client, original_message, media_data, file_path
                 )
             else:
+                # 处理单条消息前，检查是否需要完成之前的媒体组
+                await self._complete_current_media_group(client)
+
                 logger.info(f"📄 处理单条消息: {original_message.id}")
                 return await self._upload_single_message(
                     client, original_message, media_data, file_path
@@ -108,6 +112,65 @@ class UploadService:
             logger.error(f"上传单条消息失败: {e}")
             return False
     
+    async def _handle_media_group_message_sequential(
+        self,
+        client: Client,
+        original_message: Any,
+        media_data: Optional[bytes] = None,
+        file_path: Optional[Path] = None
+    ) -> bool:
+        """顺序处理媒体组消息（基于媒体组感知分配）"""
+        try:
+            media_group_id = original_message.media_group_id
+
+            # 检查是否是新的媒体组
+            if self.current_media_group_id != media_group_id:
+                # 如果有之前的媒体组未发送，先发送它
+                if self.current_media_group_id and self.current_media_group_id in self.media_group_cache:
+                    prev_group_size = len(self.media_group_cache[self.current_media_group_id])
+                    logger.info(f"🚀 发送完整媒体组 {self.current_media_group_id}，包含 {prev_group_size} 个文件")
+                    await self._upload_media_group(client, self.current_media_group_id)
+
+                # 开始新的媒体组
+                self.current_media_group_id = media_group_id
+                if media_group_id not in self.media_group_cache:
+                    self.media_group_cache[media_group_id] = []
+                    logger.info(f"📦 开始新媒体组: {media_group_id}")
+
+            # 将消息添加到当前媒体组缓存
+            self.media_group_cache[media_group_id].append({
+                'message': original_message,
+                'media_data': media_data,
+                'file_path': file_path,
+                'client': client
+            })
+
+            current_count = len(self.media_group_cache[media_group_id])
+            logger.info(f"媒体组 {media_group_id} 当前有 {current_count} 个文件")
+
+            # 如果当前媒体组已经收集了预期数量的文件（通常是10个），立即发送
+            # 这是基于媒体组感知分配的优化：每个客户端应该收到完整的媒体组
+            if current_count >= 10:
+                logger.info(f"🎯 媒体组 {media_group_id} 收集完整（{current_count}个文件），立即发送")
+                await self._upload_media_group(client, media_group_id)
+                self.current_media_group_id = None  # 重置当前媒体组ID
+
+            return True
+
+        except Exception as e:
+            logger.error(f"处理媒体组消息失败: {e}")
+            return False
+
+    async def _complete_current_media_group(self, client: Client) -> bool:
+        """完成当前媒体组的上传"""
+        if self.current_media_group_id and self.current_media_group_id in self.media_group_cache:
+            current_count = len(self.media_group_cache[self.current_media_group_id])
+            logger.info(f"🚀 完成媒体组上传: {self.current_media_group_id}，包含 {current_count} 个文件")
+            result = await self._upload_media_group(client, self.current_media_group_id)
+            self.current_media_group_id = None  # 重置当前媒体组ID
+            return result
+        return True
+
     async def _handle_media_group_message(
         self,
         client: Client,
@@ -115,7 +178,7 @@ class UploadService:
         media_data: Optional[bytes] = None,
         file_path: Optional[Path] = None
     ) -> bool:
-        """处理媒体组消息"""
+        """处理媒体组消息（旧的时间收集方式，保留作为备用）"""
         try:
             media_group_id = original_message.media_group_id
 
@@ -477,8 +540,21 @@ class UploadService:
         """完成上传，发送所有剩余的媒体组"""
         logger.info("🔄 开始发送剩余的媒体组...")
 
-        for media_group_id, group_messages in list(self.media_group_cache.items()):
+        # 首先完成当前正在处理的媒体组
+        if self.current_media_group_id and self.current_media_group_id in self.media_group_cache:
+            group_messages = self.media_group_cache[self.current_media_group_id]
             if group_messages:
+                logger.info(f"发送当前媒体组 {self.current_media_group_id}，包含 {len(group_messages)} 个文件")
+                client = group_messages[0].get('client')
+                if client:
+                    try:
+                        await self._upload_media_group(client, self.current_media_group_id)
+                    except Exception as e:
+                        logger.error(f"发送当前媒体组失败: {e}")
+
+        # 然后发送其他剩余的媒体组
+        for media_group_id, group_messages in list(self.media_group_cache.items()):
+            if group_messages and media_group_id != self.current_media_group_id:
                 logger.info(f"发送剩余媒体组 {media_group_id}，包含 {len(group_messages)} 个文件")
 
                 # 使用第一个消息的客户端
@@ -489,4 +565,6 @@ class UploadService:
                     except Exception as e:
                         logger.error(f"发送剩余媒体组失败: {e}")
 
+        # 重置状态
+        self.current_media_group_id = None
         logger.info("✅ 剩余媒体组发送完成")

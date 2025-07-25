@@ -11,12 +11,12 @@ from pyrogram.errors import FloodWait
 
 
 # ==================== 配置区域 ====================
-# 请在这里填入您的配置信息
+# 请通过环境变量或直接修改这里的配置信息
 
 # Telegram API 配置（三个客户端共用）
-API_ID = 25098445  # 请替换为您的API ID
-API_HASH = "cc2fa5a762621d306d8de030614e4555"  # 请替换为您的API Hash
-PHONE_NUMBER = "+8618758361347"  # 请替换为您的电话号码
+API_ID = int(os.getenv("API_ID", "12345678"))  # 请替换为您的API ID
+API_HASH = os.getenv("API_HASH", "your_api_hash_here")  # 请替换为您的API Hash
+PHONE_NUMBER = os.getenv("PHONE_NUMBER", "+1234567890")  # 请替换为您的电话号码
 
 # 三个客户端的会话名称
 SESSION_NAMES = [
@@ -26,10 +26,10 @@ SESSION_NAMES = [
 ]
 
 # SOCKS5 代理配置
-PROXY_HOST = "127.0.0.1"  # 代理服务器地址
-PROXY_PORT = 7890  # 代理端口
-PROXY_USERNAME = None  # 代理用户名（如果需要）
-PROXY_PASSWORD = None  # 代理密码（如果需要）
+PROXY_HOST = os.getenv("PROXY_HOST", "127.0.0.1")  # 代理服务器地址
+PROXY_PORT = int(os.getenv("PROXY_PORT", "7890"))  # 代理端口
+PROXY_USERNAME = os.getenv("PROXY_USERNAME", None)  # 代理用户名（如果需要）
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD", None)  # 代理密码（如果需要）
 
 # ==================== 配置区域结束 ====================
 

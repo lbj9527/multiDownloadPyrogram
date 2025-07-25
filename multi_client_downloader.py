@@ -42,15 +42,15 @@ setup_logging(verbose=False)
 logger = logging.getLogger(__name__)
 
 # ==================== 配置区域 ====================
-# Telegram API 配置
-API_ID = 25098445
-API_HASH = "cc2fa5a762621d306d8de030614e4555"
-PHONE_NUMBER = "+8618758361347"
+# Telegram API 配置 - 请通过环境变量设置
+API_ID = int(os.getenv("API_ID", "0"))  # 必须通过环境变量设置
+API_HASH = os.getenv("API_HASH", "")  # 必须通过环境变量设置
+PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")  # 必须通过环境变量设置
 
-# 下载配置
-TARGET_CHANNEL = "csdkl"  # https://t.me/csdkl
-START_MESSAGE_ID = 71986
-END_MESSAGE_ID = 72155
+# 下载配置 - 请通过环境变量设置
+TARGET_CHANNEL = os.getenv("TARGET_CHANNEL", "")  # 必须通过环境变量设置
+START_MESSAGE_ID = int(os.getenv("START_MESSAGE_ID", "1"))
+END_MESSAGE_ID = int(os.getenv("END_MESSAGE_ID", "100"))
 TOTAL_MESSAGES = END_MESSAGE_ID - START_MESSAGE_ID + 1
 
 # 会话文件配置
@@ -63,9 +63,9 @@ SESSION_NAMES = [
 # SOCKS5 代理配置
 PROXY_CONFIG = {
     "scheme": "socks5",
-    "hostname": "127.0.0.1",
-    "port": 7890
-}
+    "hostname": os.getenv("PROXY_HOST", "127.0.0.1"),
+    "port": int(os.getenv("PROXY_PORT", "7890"))
+} if os.getenv("USE_PROXY", "false").lower() == "true" else None
 
 # 下载目录
 DOWNLOAD_DIR = Path("downloads")

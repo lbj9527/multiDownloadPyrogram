@@ -10,6 +10,10 @@ from datetime import datetime
 from models import DownloadTask, TaskRange, TaskStatus
 from services import ClientManager
 from core import TelegramDownloader
+from core.message_grouper import MessageGrouper
+# 延迟导入以避免循环导入
+# from core.task_distribution import TaskDistributor, DistributionConfig, DistributionMode
+# from core.task_distribution.base import LoadBalanceMetric
 from utils import get_logger
 
 logger = get_logger(__name__)
@@ -314,3 +318,201 @@ class DownloadInterface:
             "running_tasks": running_tasks,
             "task_details": self.get_active_tasks()
         }
+
+    async def download_messages_with_media_group_awareness(
+        self,
+        channel: str,
+        start_message_id: int,
+        end_message_id: int,
+        batch_size: int = 200,
+        distribution_mode = None,
+        task_distribution_config = None
+    ) -> List[Dict[str, Any]]:
+        """
+        媒体组感知的消息下载
+
+        Args:
+            channel: 频道名称
+            start_message_id: 开始消息ID
+            end_message_id: 结束消息ID
+            batch_size: 批次大小
+            distribution_mode: 分配模式（可选）
+
+        Returns:
+            下载结果列表
+        """
+        # 延迟导入以避免循环导入
+        from core.task_distribution import TaskDistributor, DistributionConfig, DistributionMode
+        from core.task_distribution.base import LoadBalanceMetric
+
+        logger.info(f"开始媒体组感知下载: {channel} ({start_message_id}-{end_message_id})")
+
+        # 获取可用客户端
+        available_clients = self.client_manager.get_available_clients()
+        if not available_clients:
+            raise ValueError("没有可用的客户端")
+
+        try:
+            # 1. 消息分组阶段
+            logger.info("📦 开始消息分组...")
+            # 使用传入的配置或默认值
+            max_retries = 3
+            if task_distribution_config and hasattr(task_distribution_config, 'max_retries'):
+                max_retries = task_distribution_config.max_retries
+
+            message_grouper = MessageGrouper(
+                batch_size=batch_size,
+                max_retries=max_retries
+            )
+
+            # 使用第一个客户端获取并分组消息
+            first_client = self.client_manager.get_client(available_clients[0])
+            message_collection = await message_grouper.group_messages_from_range(
+                first_client, channel, start_message_id, end_message_id
+            )
+
+            # 记录分组统计
+            grouping_stats = message_collection.get_statistics()
+            logger.info(f"消息分组完成: {grouping_stats}")
+
+            # 2. 任务分配阶段
+            logger.info("⚖️ 开始任务分配...")
+
+            # 创建分配配置
+            if task_distribution_config:
+                # 转换配置类型
+                distribution_config = DistributionConfig(
+                    mode=DistributionMode(task_distribution_config.mode.value),
+                    load_balance_metric=LoadBalanceMetric(task_distribution_config.load_balance_metric.value),
+                    max_imbalance_ratio=task_distribution_config.max_imbalance_ratio,
+                    prefer_large_groups_first=task_distribution_config.prefer_large_groups_first,
+                    enable_validation=task_distribution_config.enable_validation
+                )
+                if distribution_mode:
+                    distribution_config.mode = distribution_mode
+            else:
+                # 使用默认配置
+                distribution_config = DistributionConfig(
+                    mode=distribution_mode or DistributionMode.MEDIA_GROUP_AWARE,
+                    load_balance_metric=LoadBalanceMetric.FILE_COUNT,
+                    max_imbalance_ratio=0.3,
+                    prefer_large_groups_first=True,
+                    enable_validation=True
+                )
+
+            # 执行任务分配
+            task_distributor = TaskDistributor(distribution_config)
+            distribution_result = await task_distributor.distribute_tasks(
+                message_collection, available_clients
+            )
+
+            # 3. 执行下载任务
+            logger.info("🚀 开始并发下载...")
+            download_tasks = []
+
+            for assignment in distribution_result.client_assignments:
+                if assignment.total_messages > 0:
+                    # 获取该客户端的所有消息
+                    client_messages = assignment.get_all_messages()
+
+                    # 创建下载任务
+                    task = self._create_media_group_aware_task(
+                        assignment.client_name,
+                        channel,
+                        client_messages,
+                        batch_size
+                    )
+                    download_tasks.append(task)
+
+            # 并发执行下载任务
+            results = await self._execute_media_group_aware_tasks(download_tasks)
+
+            # 4. 记录最终统计
+            self._log_media_group_aware_results(results, distribution_result)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"媒体组感知下载失败: {e}")
+            raise
+
+    def _create_media_group_aware_task(
+        self,
+        client_name: str,
+        channel: str,
+        messages: List[Any],
+        batch_size: int
+    ) -> Dict[str, Any]:
+        """创建媒体组感知的下载任务"""
+        return {
+            "client_name": client_name,
+            "channel": channel,
+            "messages": messages,
+            "batch_size": batch_size,
+            "task_type": "media_group_aware"
+        }
+
+    async def _execute_media_group_aware_tasks(
+        self,
+        tasks: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """执行媒体组感知的下载任务"""
+        async def execute_single_task(task_info: Dict[str, Any]) -> Dict[str, Any]:
+            client_name = task_info["client_name"]
+            channel = task_info["channel"]
+            messages = task_info["messages"]
+
+            try:
+                client = self.client_manager.get_client(client_name)
+
+                # 使用下载器处理消息列表
+                result = await self.downloader.download_message_list(
+                    client, channel, messages
+                )
+
+                return {
+                    "client": client_name,
+                    "status": "completed",
+                    "downloaded": result.get("downloaded", 0),
+                    "failed": result.get("failed", 0),
+                    "total_messages": len(messages)
+                }
+
+            except Exception as e:
+                logger.error(f"客户端 {client_name} 下载失败: {e}")
+                return {
+                    "client": client_name,
+                    "status": "failed",
+                    "error": str(e),
+                    "downloaded": 0,
+                    "failed": len(messages),
+                    "total_messages": len(messages)
+                }
+
+        # 并发执行所有任务
+        return await asyncio.gather(*[
+            execute_single_task(task) for task in tasks
+        ])
+
+    def _log_media_group_aware_results(
+        self,
+        results: List[Dict[str, Any]],
+        distribution_result
+    ):
+        """记录媒体组感知下载的结果"""
+        logger.info("=" * 60)
+        logger.info("📊 媒体组感知下载结果")
+        logger.info("=" * 60)
+
+        total_downloaded = sum(r.get("downloaded", 0) for r in results)
+        total_failed = sum(r.get("failed", 0) for r in results)
+        total_messages = sum(r.get("total_messages", 0) for r in results)
+
+        logger.info(f"总计: {total_downloaded} 成功, {total_failed} 失败")
+        logger.info(f"成功率: {(total_downloaded / total_messages * 100) if total_messages > 0 else 0:.1f}%")
+
+        # 显示分配统计
+        balance_stats = distribution_result.get_load_balance_stats()
+        logger.info(f"负载均衡比例: {balance_stats.get('file_balance_ratio', 0):.3f}")
+
+        logger.info("=" * 60)

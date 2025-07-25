@@ -8,6 +8,14 @@ import os
 from typing import Dict, List, Optional, Union, Any
 from pathlib import Path
 
+# 加载.env文件
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # 加载.env文件中的环境变量
+except ImportError:
+    # 如果没有安装python-dotenv，给出提示
+    print("⚠️ 建议安装 python-dotenv 以支持.env文件: pip install python-dotenv")
+
 try:
     from pydantic import BaseModel, Field
     try:
@@ -25,6 +33,7 @@ except ImportError:
     PYDANTIC_V2 = False
 
 from .validators import ConfigValidator
+from .task_distribution import TaskDistributionConfig
 
 
 # 配置基类
@@ -135,6 +144,15 @@ if PYDANTIC_AVAILABLE:
         archive_after_days: int = Field(30, description="归档天数", ge=1)
         cleanup_after_days: int = Field(90, description="清理天数", ge=1)
 
+        @classmethod
+        def from_env(cls) -> 'StorageConfig':
+            """从环境变量创建配置"""
+            return cls(
+                storage_mode=os.getenv("STORAGE_MODE", "upload"),
+                archive_after_days=int(os.getenv("ARCHIVE_AFTER_DAYS", "30")),
+                cleanup_after_days=int(os.getenv("CLEANUP_AFTER_DAYS", "90"))
+            )
+
     class LoggingConfig(ConfigBase):
         """日志配置"""
         level: str = Field("INFO", description="日志级别")
@@ -143,6 +161,18 @@ if PYDANTIC_AVAILABLE:
         file_path: str = Field("logs/downloader.log", description="日志文件路径")
         console_enabled: bool = Field(True, description="启用控制台日志")
         verbose_pyrogram: bool = Field(False, description="详细Pyrogram日志")
+
+        @classmethod
+        def from_env(cls) -> 'LoggingConfig':
+            """从环境变量创建配置"""
+            return cls(
+                level=os.getenv("LOG_LEVEL", "INFO"),
+                format=os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
+                file_enabled=os.getenv("LOG_FILE_ENABLED", "true").lower() == "true",
+                file_path=os.getenv("LOG_FILE_PATH", "logs/downloader.log"),
+                console_enabled=os.getenv("LOG_CONSOLE_ENABLED", "true").lower() == "true",
+                verbose_pyrogram=os.getenv("VERBOSE_PYROGRAM", "false").lower() == "true"
+            )
 else:
     @dataclass
     class StorageConfig:
@@ -150,6 +180,15 @@ else:
         storage_mode: str = "upload"  # 支持 raw/upload/hybrid 模式
         archive_after_days: int = 30
         cleanup_after_days: int = 90
+
+        @classmethod
+        def from_env(cls) -> 'StorageConfig':
+            """从环境变量创建配置"""
+            return cls(
+                storage_mode=os.getenv("STORAGE_MODE", "upload"),
+                archive_after_days=int(os.getenv("ARCHIVE_AFTER_DAYS", "30")),
+                cleanup_after_days=int(os.getenv("CLEANUP_AFTER_DAYS", "90"))
+            )
 
     @dataclass
     class LoggingConfig:
@@ -161,6 +200,18 @@ else:
         console_enabled: bool = True
         verbose_pyrogram: bool = False
 
+        @classmethod
+        def from_env(cls) -> 'LoggingConfig':
+            """从环境变量创建配置"""
+            return cls(
+                level=os.getenv("LOG_LEVEL", "INFO"),
+                format=os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
+                file_enabled=os.getenv("LOG_FILE_ENABLED", "true").lower() == "true",
+                file_path=os.getenv("LOG_FILE_PATH", "logs/downloader.log"),
+                console_enabled=os.getenv("LOG_CONSOLE_ENABLED", "true").lower() == "true",
+                verbose_pyrogram=os.getenv("VERBOSE_PYROGRAM", "false").lower() == "true"
+            )
+
 
 class AppSettings:
     """应用程序主配置类"""
@@ -168,29 +219,29 @@ class AppSettings:
     def __init__(self, config_file: Optional[str] = None):
         # 准备配置数据
         telegram_data = {
-            "api_id": int(os.getenv("API_ID", "25098445")),
-            "api_hash": os.getenv("API_HASH", "cc2fa5a762621d306d8de030614e4555"),
-            "phone_number": os.getenv("PHONE_NUMBER", "+8618758361347"),
+            "api_id": int(os.getenv("API_ID", "0")),  # 必须通过环境变量设置
+            "api_hash": os.getenv("API_HASH", ""),  # 必须通过环境变量设置
+            "phone_number": os.getenv("PHONE_NUMBER", ""),  # 必须通过环境变量设置
             "proxy": {
                 "scheme": "socks5",
-                "hostname": "127.0.0.1",
-                "port": 7890
-            } if os.getenv("USE_PROXY", "true").lower() == "true" else None
+                "hostname": os.getenv("PROXY_HOST", "127.0.0.1"),
+                "port": int(os.getenv("PROXY_PORT", "7890"))
+            } if os.getenv("USE_PROXY", "false").lower() == "true" else None
         }
 
         download_data = {
-            "target_channel": os.getenv("TARGET_CHANNEL", "csdkl"),
-            "start_message_id": int(os.getenv("START_MESSAGE_ID", "72126")),
-            "end_message_id": int(os.getenv("END_MESSAGE_ID", "72155")),
+            "target_channel": os.getenv("TARGET_CHANNEL", ""),  # 必须通过环境变量设置
+            "start_message_id": int(os.getenv("START_MESSAGE_ID", "1")),  # 默认从消息1开始
+            "end_message_id": int(os.getenv("END_MESSAGE_ID", "100")),  # 默认到消息100
             "batch_size": int(os.getenv("BATCH_SIZE", "200")),
-            "max_concurrent_clients": int(os.getenv("MAX_CLIENTS", "3")),
-            "download_directory": os.getenv("DOWNLOAD_DIR", "downloads"),
-            "session_directory": os.getenv("SESSION_DIR", "sessions")
+            "max_concurrent_clients": int(os.getenv("MAX_CONCURRENT_CLIENTS", "3")),
+            "download_directory": os.getenv("DOWNLOAD_DIRECTORY", "downloads"),
+            "session_directory": os.getenv("SESSION_DIRECTORY", "sessions")
         }
 
         upload_data = {
-            "enabled": os.getenv("UPLOAD_ENABLED", "true").lower() == "true",  # 默认启用
-            "target_channel": os.getenv("UPLOAD_TARGET_CHANNEL", "@wghrwf"),  # 默认目标频道
+            "enabled": os.getenv("UPLOAD_ENABLED", "false").lower() == "true",  # 默认禁用
+            "target_channel": os.getenv("UPLOAD_TARGET_CHANNEL", ""),  # 必须通过环境变量设置
             "preserve_media_groups": os.getenv("PRESERVE_MEDIA_GROUPS", "true").lower() == "true",
             "preserve_captions": os.getenv("PRESERVE_CAPTIONS", "true").lower() == "true",
             "upload_delay": float(os.getenv("UPLOAD_DELAY", "1.5")),  # 默认1.5秒延迟
@@ -202,14 +253,16 @@ class AppSettings:
             self.telegram = TelegramConfig(**telegram_data)
             self.download = DownloadConfig(**download_data)
             self.upload = UploadConfig(**upload_data)
-            self.storage = StorageConfig()
-            self.logging = LoggingConfig()
+            self.storage = StorageConfig.from_env()
+            self.logging = LoggingConfig.from_env()
+            self.task_distribution = TaskDistributionConfig.from_env()
         else:
             self.telegram = TelegramConfig(**telegram_data)
             self.download = DownloadConfig(**download_data)
             self.upload = UploadConfig(**upload_data)
-            self.storage = StorageConfig()
-            self.logging = LoggingConfig()
+            self.storage = StorageConfig.from_env()
+            self.logging = LoggingConfig.from_env()
+            self.task_distribution = TaskDistributionConfig.from_env()
         
         # 如果提供了配置文件，加载配置
         if config_file and Path(config_file).exists():
@@ -248,11 +301,17 @@ class AppSettings:
             # 对于dataclass，使用传统验证方式
             errors = []
 
-            if not self.telegram.api_id:
-                errors.append("API_ID 不能为空")
+            if not self.telegram.api_id or self.telegram.api_id == 0:
+                errors.append("API_ID 不能为空，请在.env文件中设置")
 
             if not self.telegram.api_hash:
-                errors.append("API_HASH 不能为空")
+                errors.append("API_HASH 不能为空，请在.env文件中设置")
+
+            if not self.telegram.phone_number:
+                errors.append("PHONE_NUMBER 不能为空，请在.env文件中设置")
+
+            if not self.download.target_channel:
+                errors.append("TARGET_CHANNEL 不能为空，请在.env文件中设置")
 
             if self.download.start_message_id >= self.download.end_message_id:
                 errors.append("开始消息ID必须小于结束消息ID")
@@ -260,8 +319,26 @@ class AppSettings:
             if self.download.batch_size <= 0 or self.download.batch_size > 200:
                 errors.append("批次大小必须在1-200之间")
 
+            # 如果启用上传功能，检查上传目标频道
+            if self.upload.enabled and not self.upload.target_channel:
+                errors.append("启用上传功能时，UPLOAD_TARGET_CHANNEL 不能为空")
+
             return errors
 
 
-# 全局配置实例
-app_settings = AppSettings()
+# 全局配置实例 - 延迟初始化
+app_settings = None
+
+def get_app_settings():
+    """获取应用配置实例（延迟初始化）"""
+    global app_settings
+    if app_settings is None:
+        app_settings = AppSettings()
+    return app_settings
+
+# 为了向后兼容，在模块级别提供实例
+try:
+    app_settings = AppSettings()
+except Exception as e:
+    print(f"⚠️ 配置初始化警告: {e}")
+    app_settings = None

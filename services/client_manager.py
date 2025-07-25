@@ -157,39 +157,50 @@ class ClientManager:
     async def disconnect_all_clients(self):
         """断开所有客户端连接"""
         logger.info("开始断开所有客户端连接...")
-        
-        disconnect_tasks = []
-        
-        for client_name in self.clients.keys():
-            task = self._disconnect_client_with_info(client_name)
-            disconnect_tasks.append(task)
-        
-        # 并发断开所有客户端
-        await asyncio.gather(*disconnect_tasks, return_exceptions=True)
-        
+
+        # 按顺序断开客户端，避免并发导致的数据库竞争
+        for client_name in list(self.clients.keys()):
+            try:
+                await self._disconnect_client_with_info(client_name)
+                # 在每个客户端断开后稍作等待，确保清理完成
+                await asyncio.sleep(0.05)
+            except Exception as e:
+                logger.debug(f"断开客户端 {client_name} 时的信息: {e}")
+
+        # 最后等待一小段时间，确保所有后台任务都完成
+        await asyncio.sleep(0.2)
+
         logger.info("所有客户端已断开连接")
     
     async def _disconnect_client_with_info(self, client_name: str):
         """
         断开单个客户端并更新信息
-        
+
         Args:
             client_name: 客户端名称
         """
         try:
             client = self.clients[client_name]
             client_info = self.client_infos[client_name]
-            
-            # 断开连接
-            await client.stop()
-            
+
+            # 检查客户端是否已连接
+            if client.is_connected:
+                # 根据 Pyrogram 文档，给后台任务一些时间完成
+                # 这样可以避免数据库操作被中断
+                await asyncio.sleep(0.1)
+
+                # 断开连接
+                await client.stop()
+                logger.debug(f"客户端 {client_name} 已断开连接")
+            else:
+                logger.debug(f"客户端 {client_name} 已经断开连接")
+
             # 更新断开信息
             client_info.disconnect()
-            
-            logger.debug(f"客户端 {client_name} 已断开连接")
-            
+
         except Exception as e:
-            logger.error(f"断开客户端 {client_name} 失败: {e}")
+            # 记录错误但不抛出异常，避免影响其他客户端的断开
+            logger.debug(f"断开客户端 {client_name} 时的信息: {e}")
     
     def get_client(self, client_name: str) -> Optional[Client]:
         """

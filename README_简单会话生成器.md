@@ -28,7 +28,7 @@ pip install -r requirements_simple.txt
 # Telegram API 配置（三个客户端共用）
 API_ID = 12345678  # 替换为您的API ID
 API_HASH = "your_api_hash_here"  # 替换为您的API Hash
-PHONE_NUMBER = "+8613800138000"  # 替换为您的电话号码
+PHONE_NUMBER = "+1234567890"  # 替换为您的电话号码
 
 # 三个客户端的会话名称
 SESSION_NAMES = [
