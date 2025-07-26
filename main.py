@@ -101,17 +101,26 @@ class TelegramDownloaderApp:
                     batch_size=download_config.batch_size
                 )
 
-            # 计算总耗时
-            elapsed_time = time.time() - start_time
+            # 计算下载耗时
+            download_elapsed_time = time.time() - start_time
 
-            # 显示结果
-            self._display_results(results, elapsed_time)
+            # 显示下载结果
+            self._display_results(results, download_elapsed_time)
 
             # 完成剩余的上传任务（如果启用了上传）
+            upload_start_time = time.time()
             if self.upload_service:
                 logger.info("🔄 完成剩余的上传任务...")
-                await self.upload_service.finalize_upload()
-                self._display_upload_stats()
+                await self.upload_service.shutdown()
+                upload_elapsed_time = time.time() - upload_start_time
+                await self._display_upload_stats()
+
+                # 显示总耗时统计
+                total_elapsed_time = time.time() - start_time
+                self._display_total_time_stats(download_elapsed_time, upload_elapsed_time, total_elapsed_time)
+            else:
+                # 如果没有上传，总耗时就是下载耗时
+                self._display_total_time_stats(download_elapsed_time, 0, download_elapsed_time)
 
         except Exception as e:
             logger.error(f"❌ 下载任务失败: {e}")
@@ -123,6 +132,9 @@ class TelegramDownloaderApp:
         if hasattr(self, '_results_displayed'):
             return
         self._results_displayed = True
+
+        # 保存结果以便后续计算总体速度
+        self._last_results = results
 
         # 收集所有有效结果
         valid_results = []
@@ -141,7 +153,8 @@ class TelegramDownloaderApp:
                 valid_results.append({
                     "client": client_name,
                     "downloaded": downloaded,
-                    "failed": failed
+                    "failed": failed,
+                    "success_count": downloaded  # 添加成功计数
                 })
 
         # 一次性输出所有统计信息
@@ -173,7 +186,51 @@ class TelegramDownloaderApp:
         logger.info(f"下载目录: {download_dir.absolute()}")
 
         logger.info("=" * 60)
-    
+
+    def _display_total_time_stats(self, download_time: float, upload_time: float, total_time: float):
+        """显示总耗时统计"""
+        logger.info("⏱️ 总耗时统计:")
+        logger.info("=" * 60)
+
+        # 格式化时间显示
+        def format_time(seconds: float) -> str:
+            if seconds < 60:
+                return f"{seconds:.1f} 秒"
+            elif seconds < 3600:
+                minutes = int(seconds // 60)
+                remaining_seconds = seconds % 60
+                return f"{minutes} 分 {remaining_seconds:.1f} 秒"
+            else:
+                hours = int(seconds // 3600)
+                remaining_minutes = int((seconds % 3600) // 60)
+                remaining_seconds = seconds % 60
+                return f"{hours} 小时 {remaining_minutes} 分 {remaining_seconds:.1f} 秒"
+
+        logger.info(f"📥 下载耗时: {format_time(download_time)}")
+
+        if upload_time > 0:
+            logger.info(f"📤 上传耗时: {format_time(upload_time)}")
+            upload_percentage = (upload_time / total_time) * 100
+            download_percentage = (download_time / total_time) * 100
+            logger.info(f"📊 时间分布: 下载 {download_percentage:.1f}%, 上传 {upload_percentage:.1f}%")
+
+        logger.info(f"🕐 总计耗时: {format_time(total_time)}")
+
+        # 计算平均速度（如果有统计信息）
+        if hasattr(self, '_last_results') and self._last_results:
+            total_files = sum(result.get('success_count', 0) for result in self._last_results)
+            if total_files > 0:
+                download_speed = total_files / download_time
+                logger.info(f"📈 下载平均速度: {download_speed:.2f} 文件/秒")
+
+                if upload_time > 0:
+                    upload_speed = total_files / upload_time
+                    overall_speed = total_files / total_time
+                    logger.info(f"📈 上传平均速度: {upload_speed:.2f} 文件/秒")
+                    logger.info(f"📈 总体平均速度: {overall_speed:.2f} 文件/秒")
+
+        logger.info("=" * 60)
+
     async def cleanup(self):
         """清理资源"""
         logger.info("🧹 清理资源...")
@@ -190,13 +247,13 @@ class TelegramDownloaderApp:
         except Exception as e:
             logger.error(f"❌ 清理资源失败: {e}")
 
-    def _display_upload_stats(self):
+    async def _display_upload_stats(self):
         """显示上传统计信息"""
         if not self.upload_service:
             return
 
         logger.info("📤 上传统计信息:")
-        stats = self.upload_service.get_upload_stats()
+        stats = await self.upload_service.get_upload_stats()
 
         logger.info(f"总上传文件: {stats['total_uploaded']}")
         logger.info(f"上传失败: {stats['total_failed']}")
@@ -205,6 +262,12 @@ class TelegramDownloaderApp:
         if stats['total_uploaded'] > 0:
             success_rate = (stats['total_uploaded'] / (stats['total_uploaded'] + stats['total_failed'])) * 100
             logger.info(f"上传成功率: {success_rate:.1f}%")
+
+        # 显示客户端状态
+        if 'client_states' in stats:
+            logger.info("📊 客户端上传状态:")
+            for client_name, client_state in stats['client_states'].items():
+                logger.info(f"  {client_name}: 队列大小={client_state['queue_size']}, 缓存消息={client_state['cached_messages']}")
 
         logger.info("=" * 60)
 
