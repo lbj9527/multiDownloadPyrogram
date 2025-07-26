@@ -294,11 +294,21 @@ class UploadService:
         # 只等待队列中的任务完成（不等待缓存，因为缓存需要手动处理）
         await self._wait_for_queue_complete()
 
-        # 完成所有客户端的剩余媒体组上传
+        # 并发完成所有客户端的剩余媒体组上传
+        upload_tasks = []
         for client_name, state in self.client_upload_states.items():
             if state.current_media_group_id and state.media_group_cache:
-                logger.info(f"📤 完成客户端 {client_name} 的剩余媒体组上传")
-                await self._upload_cached_media_group(state)
+                logger.info(f"📤 准备上传客户端 {client_name} 的剩余媒体组")
+                task = self._upload_cached_media_group(state)
+                upload_tasks.append(task)
+
+        # 并发等待所有上传完成
+        if upload_tasks:
+            logger.info(f"🚀 开始并发上传 {len(upload_tasks)} 个客户端的媒体组")
+            await asyncio.gather(*upload_tasks)
+            logger.info("✅ 所有客户端的媒体组上传完成")
+        else:
+            logger.info("📋 没有剩余的媒体组需要上传")
 
         # 设置关闭标志并停止所有上传处理任务
         self._shutdown = True
