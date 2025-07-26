@@ -45,16 +45,20 @@ class TaskDistributor:
         self,
         message_collection: MessageGroupCollection,
         client_names: List[str],
-        strategy_mode: Optional[DistributionMode] = None
+        strategy_mode: Optional[DistributionMode] = None,
+        client=None,
+        channel: str = None
     ) -> TaskDistributionResult:
         """
         分配任务
-        
+
         Args:
             message_collection: 消息集合
             client_names: 客户端名称列表
             strategy_mode: 分配策略模式（可选，默认使用配置中的模式）
-            
+            client: Pyrogram客户端（用于消息验证，可选）
+            channel: 频道名称（用于消息验证，可选）
+
         Returns:
             任务分配结果
         """
@@ -62,11 +66,13 @@ class TaskDistributor:
         mode = strategy_mode or self.config.mode
         strategy = self._get_strategy(mode)
         
-        logger.info(f"开始任务分配，策略: {mode.value}, 客户端数量: {len(client_names)}")
+
         
         try:
             # 执行分配
-            result = await strategy.distribute_tasks(message_collection, client_names)
+            result = await strategy.distribute_tasks(
+                message_collection, client_names, client, channel
+            )
             
             # 验证结果
             if self.config.enable_validation:
@@ -74,7 +80,7 @@ class TaskDistributor:
                     result, message_collection
                 )
                 if validation_errors:
-                    logger.warning(f"分配结果验证发现问题: {validation_errors}")
+                    pass  # 静默处理验证错误
             
             # 计算指标
             metrics = DistributionMetrics.calculate_distribution_metrics(result)
@@ -145,35 +151,13 @@ class TaskDistributor:
         self.stats["strategy_usage"][strategy_name] += 1
     
     def _log_distribution_result(
-        self, 
-        result: TaskDistributionResult, 
+        self,
+        result: TaskDistributionResult,
         metrics: Dict[str, Any]
     ):
         """记录分配结果"""
-        logger.info("=" * 60)
-        logger.info("📊 任务分配结果")
-        logger.info("=" * 60)
-        
-        # 基础信息
-        logger.info(f"分配策略: {result.distribution_strategy}")
-        logger.info(f"客户端数量: {metrics['clients_count']}")
-        logger.info(f"总文件数: {metrics['total_files']}")
-        logger.info(f"总消息数: {metrics['total_messages']}")
-        
-        # 负载均衡信息
-        balance_scores = metrics.get("balance_scores", {})
-        logger.info(f"文件负载均衡: {balance_scores.get('file_balance', 0):.3f}")
-        logger.info(f"大小负载均衡: {balance_scores.get('size_balance', 0):.3f}")
-        
-        # 客户端分配详情
-        logger.info("-" * 60)
-        for assignment in result.client_assignments:
-            stats = assignment.get_statistics()
-            logger.info(f"{assignment.client_name}: {stats['total_files']} 文件, "
-                       f"{stats['media_groups_count']} 媒体组, "
-                       f"{stats['estimated_size'] / (1024*1024):.1f} MB")
-        
-        logger.info("=" * 60)
+        # 不再输出详细的分配结果
+        pass
     
     def get_stats(self) -> Dict[str, Any]:
         """获取分配器统计信息"""

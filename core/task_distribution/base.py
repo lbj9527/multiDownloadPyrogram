@@ -34,6 +34,7 @@ class DistributionConfig:
     max_imbalance_ratio: float = 0.3  # 最大不均衡比例（0.3表示最大差异30%）
     prefer_large_groups_first: bool = True  # 优先分配大组
     enable_validation: bool = True  # 启用验证
+    enable_message_id_validation: bool = True  # 启用消息ID验证
     
     # 高级配置
     custom_weights: Dict[str, float] = field(default_factory=dict)
@@ -56,15 +57,19 @@ class TaskDistributionStrategy(ABC):
     async def distribute_tasks(
         self,
         message_collection: MessageGroupCollection,
-        client_names: List[str]
+        client_names: List[str],
+        client=None,
+        channel: str = None
     ) -> TaskDistributionResult:
         """
         分配任务到客户端
-        
+
         Args:
             message_collection: 消息集合
             client_names: 客户端名称列表
-            
+            client: Pyrogram客户端（用于消息验证，可选）
+            channel: 频道名称（用于消息验证，可选）
+
         Returns:
             任务分配结果
         """

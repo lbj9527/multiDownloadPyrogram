@@ -3,8 +3,9 @@
 """
 
 import heapq
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 from utils import get_logger
+from utils.message_validator import MessageValidator, MessageIdFilter
 
 from .base import TaskDistributionStrategy, DistributionConfig, LoadBalanceMetric
 from models.message_group import (
@@ -23,7 +24,9 @@ class RangeBasedDistributionStrategy(TaskDistributionStrategy):
     async def distribute_tasks(
         self,
         message_collection: MessageGroupCollection,
-        client_names: List[str]
+        client_names: List[str],
+        client=None,
+        channel: str = None
     ) -> TaskDistributionResult:
         """基于消息ID范围分配任务"""
         logger.info("使用基于范围的分配策略")
@@ -90,23 +93,30 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
     async def distribute_tasks(
         self,
         message_collection: MessageGroupCollection,
-        client_names: List[str]
+        client_names: List[str],
+        client=None,
+        channel: str = None
     ) -> TaskDistributionResult:
         """媒体组感知的任务分配"""
-        logger.info("使用媒体组感知的分配策略")
-        
+
         # 验证输入
         errors = self.validate_inputs(message_collection, client_names)
         if errors:
             raise ValueError(f"输入验证失败: {errors}")
-        
+
         result = TaskDistributionResult(distribution_strategy="MediaGroupAwareDistribution")
-        
+
+        # 消息ID验证（如果启用且提供了客户端）
+        if (self.config.enable_message_id_validation and client and channel):
+            message_collection = await self._validate_and_filter_messages(
+                client, channel, message_collection
+            )
+
         # 初始化客户端分配
         client_assignments = [
             ClientTaskAssignment(client_name=name) for name in client_names
         ]
-        
+
         # 获取所有组（媒体组 + 单消息组）
         all_groups = message_collection.get_all_groups()
         
@@ -126,8 +136,7 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
         for assignment in client_assignments:
             result.add_assignment(assignment)
         
-        # 记录分配统计
-        self._log_distribution_stats(result)
+
         
         return result
     
@@ -149,20 +158,88 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
             ]
         
         return loads.index(min(loads))
-    
-    def _log_distribution_stats(self, result: TaskDistributionResult):
-        """记录分配统计信息"""
-        stats = result.get_load_balance_stats()
-        logger.info(f"媒体组感知分配完成:")
-        logger.info(f"  客户端数量: {stats['clients_count']}")
-        logger.info(f"  文件分布: {stats['file_distribution']}")
-        logger.info(f"  负载均衡比例: {stats['file_balance_ratio']:.3f}")
-        
-        for assignment in result.client_assignments:
-            assignment_stats = assignment.get_statistics()
-            logger.info(f"  {assignment.client_name}: {assignment_stats['total_files']} 文件, "
-                       f"{assignment_stats['media_groups_count']} 媒体组")
-    
+
+    async def _validate_and_filter_messages(
+        self,
+        client,
+        channel: str,
+        message_collection: MessageGroupCollection
+    ) -> MessageGroupCollection:
+        """
+        验证并过滤无效的消息ID
+
+        Args:
+            client: Pyrogram客户端
+            channel: 频道名称
+            message_collection: 原始消息集合
+
+        Returns:
+            过滤后的消息集合
+        """
+        # 收集所有消息ID
+        all_message_ids = []
+
+        # 从媒体组收集消息ID
+        for group in message_collection.media_groups.values():
+            all_message_ids.extend(group.message_ids)
+
+        # 从单条消息收集消息ID
+        for message in message_collection.single_messages:
+            if hasattr(message, 'id'):
+                all_message_ids.append(message.id)
+
+        if not all_message_ids:
+            return message_collection
+
+        # 验证消息ID
+        validator = MessageValidator()
+        valid_ids, invalid_ids, validation_stats = await validator.validate_message_ids(
+            client, channel, all_message_ids
+        )
+
+        if not invalid_ids:
+            return message_collection
+        valid_ids_set = set(valid_ids)
+
+        # 创建新的消息集合
+        filtered_collection = MessageGroupCollection()
+
+        # 过滤媒体组
+        for group in message_collection.media_groups.values():
+            filtered_messages = [
+                msg for msg in group.messages
+                if hasattr(msg, 'id') and msg.id in valid_ids_set
+            ]
+
+            if filtered_messages:
+                # 创建过滤后的组
+                from models.message_group import MessageGroup
+                filtered_group = MessageGroup(
+                    group_id=group.group_id,
+                    group_type=group.group_type
+                )
+                filtered_group.messages = filtered_messages
+                filtered_group.total_files = len(filtered_messages)
+
+                # 重新计算估算大小
+                filtered_group.estimated_size = 0
+                for message in filtered_messages:
+                    filtered_group._update_estimated_size(message)
+
+                filtered_collection.add_media_group(filtered_group)
+
+        # 过滤单条消息
+        filtered_single_messages = [
+            msg for msg in message_collection.single_messages
+            if hasattr(msg, 'id') and msg.id in valid_ids_set
+        ]
+
+        for message in filtered_single_messages:
+            filtered_collection.add_single_message(message)
+
+        return filtered_collection
+
+
     def get_strategy_info(self) -> Dict[str, Any]:
         return {
             "name": "MediaGroupAwareDistribution",
@@ -179,7 +256,9 @@ class LoadBalancedDistributionStrategy(TaskDistributionStrategy):
     async def distribute_tasks(
         self,
         message_collection: MessageGroupCollection,
-        client_names: List[str]
+        client_names: List[str],
+        client=None,
+        channel: str = None
     ) -> TaskDistributionResult:
         """高级负载均衡分配"""
         logger.info("使用高级负载均衡分配策略")
@@ -227,7 +306,6 @@ class LoadBalancedDistributionStrategy(TaskDistributionStrategy):
         if self.config.max_imbalance_ratio < 1.0:
             result = await self._optimize_distribution(result)
         
-        self._log_distribution_stats(result)
         return result
     
     def _calculate_group_weight(self, group: MessageGroup) -> float:
@@ -270,13 +348,7 @@ class LoadBalancedDistributionStrategy(TaskDistributionStrategy):
         
         return result
     
-    def _log_distribution_stats(self, result: TaskDistributionResult):
-        """记录分配统计信息"""
-        stats = result.get_load_balance_stats()
-        logger.info(f"高级负载均衡分配完成:")
-        logger.info(f"  负载均衡得分: {stats['file_balance_ratio']:.3f}")
-        logger.info(f"  文件分布标准差: {self._calculate_std(stats['file_distribution']):.2f}")
-    
+
     def _calculate_std(self, values: List[float]) -> float:
         """计算标准差"""
         if len(values) <= 1:

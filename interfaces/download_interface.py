@@ -373,10 +373,8 @@ class DownloadInterface:
 
             # 记录分组统计
             grouping_stats = message_collection.get_statistics()
-            logger.info(f"消息分组完成: {grouping_stats}")
 
             # 2. 任务分配阶段
-            logger.info("⚖️ 开始任务分配...")
 
             # 创建分配配置
             if task_distribution_config:
@@ -388,6 +386,10 @@ class DownloadInterface:
                     prefer_large_groups_first=task_distribution_config.prefer_large_groups_first,
                     enable_validation=task_distribution_config.enable_validation
                 )
+
+                # 添加消息ID验证配置（如果存在）
+                if hasattr(task_distribution_config, 'enable_message_id_validation'):
+                    distribution_config.enable_message_id_validation = task_distribution_config.enable_message_id_validation
                 if distribution_mode:
                     distribution_config.mode = distribution_mode
             else:
@@ -399,12 +401,17 @@ class DownloadInterface:
                     prefer_large_groups_first=True,
                     enable_validation=True
                 )
+                # 默认启用消息ID验证
+                distribution_config.enable_message_id_validation = True
 
             # 执行任务分配
             task_distributor = TaskDistributor(distribution_config)
             distribution_result = await task_distributor.distribute_tasks(
-                message_collection, available_clients
+                message_collection, available_clients, client=first_client, channel=channel
             )
+
+            # 打印任务分配详情
+            self._log_task_distribution_details(distribution_result)
 
             # 3. 执行下载任务
             logger.info("🚀 开始并发下载...")
@@ -516,3 +523,50 @@ class DownloadInterface:
         logger.info(f"负载均衡比例: {balance_stats.get('file_balance_ratio', 0):.3f}")
 
         logger.info("=" * 60)
+
+    def _log_task_distribution_details(self, distribution_result):
+        """记录任务分配详情"""
+        logger.info("\n" + "🎯" * 20 + " 任务分配详情 " + "🎯" * 20)
+        logger.info(f"分配策略: {distribution_result.distribution_strategy}")
+        logger.info(f"客户端数量: {len(distribution_result.client_assignments)}")
+        logger.info(f"总消息数: {distribution_result.total_messages}")
+        logger.info(f"总文件数: {distribution_result.total_files}")
+
+        logger.info("\n📊 各客户端分配概览:")
+        for assignment in distribution_result.client_assignments:
+            # 获取所有消息ID
+            all_message_ids = []
+            for group in assignment.message_groups:
+                all_message_ids.extend(group.message_ids)
+
+            if all_message_ids:
+                all_message_ids.sort()
+                # 完整显示所有消息ID，而不是范围
+                id_list = str(all_message_ids)
+            else:
+                id_list = "无消息"
+
+            # 统计媒体组和单消息
+            media_groups = [g for g in assignment.message_groups if g.is_media_group]
+            single_messages = [g for g in assignment.message_groups if not g.is_media_group]
+
+            logger.info(f"  {assignment.client_name}:")
+            logger.info(f"    📝 消息数量: {assignment.total_messages}")
+            logger.info(f"    📁 文件数量: {assignment.total_files}")
+            logger.info(f"    🔢 完整消息ID列表: {id_list}")
+            logger.info(f"    📦 媒体组: {len(media_groups)} 个")
+            logger.info(f"    📄 单条消息: {len(single_messages)} 个")
+
+            # 显示估算大小
+            size_mb = assignment.estimated_size / (1024 * 1024)
+            logger.info(f"    💾 估算大小: {size_mb:.1f} MB")
+
+        # 显示负载均衡统计
+        balance_stats = distribution_result.get_load_balance_stats()
+        if balance_stats:
+            logger.info(f"\n⚖️ 负载均衡统计:")
+            logger.info(f"  文件分布: {balance_stats.get('file_distribution', [])}")
+            logger.info(f"  均衡比例: {balance_stats.get('file_balance_ratio', 0):.3f}")
+            logger.info(f"  平均文件数/客户端: {balance_stats.get('average_files_per_client', 0):.1f}")
+
+        logger.info("🎯" * 60)

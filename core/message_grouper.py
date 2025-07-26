@@ -59,7 +59,6 @@ class MessageGrouper:
         
         # 记录统计信息
         stats = collection.get_statistics()
-        logger.info(f"消息分组完成: {stats}")
         
         return collection
     

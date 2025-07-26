@@ -65,6 +65,11 @@ if PYDANTIC_AVAILABLE:
             default=True,
             description="启用分配结果验证"
         )
+
+        enable_message_id_validation: bool = Field(
+            default=True,
+            description="启用消息ID有效性验证"
+        )
         
         # 高级配置
         batch_size: int = Field(
@@ -122,6 +127,9 @@ if PYDANTIC_AVAILABLE:
                 enable_validation=os.getenv(
                     'ENABLE_DISTRIBUTION_VALIDATION', 'true'
                 ).lower() == 'true',
+                enable_message_id_validation=os.getenv(
+                    'ENABLE_MESSAGE_ID_VALIDATION', 'true'
+                ).lower() == 'true',
                 batch_size=int(os.getenv('BATCH_SIZE', '200')),
                 max_retries=int(os.getenv('GROUPING_MAX_RETRIES', '3')),
                 enable_strategy_comparison=os.getenv(
@@ -147,6 +155,7 @@ else:
         max_imbalance_ratio: float = 0.3
         prefer_large_groups_first: bool = True
         enable_validation: bool = True
+        enable_message_id_validation: bool = True
         
         # 高级配置
         batch_size: int = 200
@@ -176,6 +185,9 @@ else:
                 ).lower() == 'true',
                 enable_validation=os.getenv(
                     'ENABLE_DISTRIBUTION_VALIDATION', 'true'
+                ).lower() == 'true',
+                enable_message_id_validation=os.getenv(
+                    'ENABLE_MESSAGE_ID_VALIDATION', 'true'
                 ).lower() == 'true',
                 batch_size=int(os.getenv('BATCH_SIZE', '200')),
                 max_retries=int(os.getenv('GROUPING_MAX_RETRIES', '3')),
