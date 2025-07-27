@@ -14,6 +14,7 @@ from config import app_settings
 from utils import setup_logging, get_logger
 from services import ClientManager, UploadService
 from core import TelegramDownloader, FileProcessor
+from core.upload_coordinator import UploadCoordinator
 from interfaces import DownloadInterface
 
 logger = get_logger(__name__)
@@ -26,15 +27,15 @@ class TelegramDownloaderApp:
         self.client_manager = ClientManager()
         self.file_processor = FileProcessor()
 
-        # 初始化上传服务（如果启用）
+        # 初始化上传服务和协调器（如果启用）
         self.upload_service = None
-        upload_handler = None
+        self.upload_coordinator = None
         if app_settings.upload.enabled:
             self.upload_service = UploadService()
-            upload_handler = self.upload_service  # 直接使用UploadService，它现在实现了接口
-            logger.info("✅ 上传服务已启用")
+            self.upload_coordinator = UploadCoordinator(self.upload_service, self.client_manager)
+            logger.info("✅ 上传服务和协调器已启用")
 
-        self.downloader = TelegramDownloader(self.file_processor, upload_handler)
+        self.downloader = TelegramDownloader(self.file_processor, self.upload_coordinator)
         self.download_interface = DownloadInterface(
             self.client_manager,
             self.downloader
@@ -66,6 +67,12 @@ class TelegramDownloaderApp:
                 return False
             
             logger.info(f"✅ 成功连接 {len(connected_clients)} 个客户端")
+
+            # 启动上传协调器（如果启用）
+            if self.upload_coordinator:
+                await self.upload_coordinator.start()
+                logger.info("✅ 上传协调器已启动")
+
             return True
             
         except Exception as e:
@@ -102,9 +109,11 @@ class TelegramDownloaderApp:
 
             # 完成剩余的上传任务（如果启用了上传）
             upload_start_time = time.time()
-            if self.upload_service:
+            if self.upload_coordinator:
                 logger.info("🔄 完成剩余的上传任务...")
-                await self.upload_service.shutdown()
+                await self.upload_coordinator.shutdown()
+                if self.upload_service:
+                    await self.upload_service.shutdown()
                 upload_elapsed_time = time.time() - upload_start_time
                 await self._display_upload_stats()
 
@@ -229,8 +238,15 @@ class TelegramDownloaderApp:
         logger.info("🧹 清理资源...")
 
         try:
-            # 清理存储策略中的并发任务
-            await self._cleanup_storage_strategies()
+            # 关闭上传协调器
+            if self.upload_coordinator:
+                await self.upload_coordinator.shutdown()
+                logger.info("✅ 上传协调器已关闭")
+
+            # 关闭上传服务
+            if self.upload_service:
+                await self.upload_service.shutdown()
+                logger.info("✅ 上传服务已关闭")
 
             # 关闭压缩文件句柄
             self.file_processor.close_compression_handles()
@@ -243,22 +259,7 @@ class TelegramDownloaderApp:
         except Exception as e:
             logger.error(f"❌ 清理资源失败: {e}")
 
-    async def _cleanup_storage_strategies(self):
-        """清理存储策略中的并发任务"""
-        try:
-            # 获取消息处理器的存储策略
-            message_handler = self.downloader.message_handler
-            if hasattr(message_handler, 'storage_strategy') and message_handler.storage_strategy:
-                storage_strategy = message_handler.storage_strategy
 
-                # 如果存储策略支持清理
-                if hasattr(storage_strategy, 'cleanup'):
-                    logger.info("🔄 清理存储策略中的并发任务...")
-                    await storage_strategy.cleanup()
-                    logger.info("✅ 存储策略清理完成")
-
-        except Exception as e:
-            logger.error(f"清理存储策略失败: {e}")
 
     async def _display_upload_stats(self):
         """显示上传统计信息"""

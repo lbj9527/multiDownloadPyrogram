@@ -143,25 +143,28 @@ class UploadService(UploadHandlerInterface):
         if client_name not in self.client_upload_states:
             self.client_upload_states[client_name] = ClientUploadState(client_name=client_name)
 
-            # 启动客户端上传处理协程
-            task = asyncio.create_task(self._client_upload_processor(client_name))
-            self.upload_tasks[client_name] = task
+            # 启动多个客户端上传处理协程以提高并发度
+            consumer_count = 1  # 每个客户端1个消费者（媒体组串行处理，1个足够）
+            for i in range(consumer_count):
+                task_name = f"{client_name}_consumer_{i}"
+                task = asyncio.create_task(self._client_upload_processor(client_name, i))
+                self.upload_tasks[task_name] = task
 
-            logger.info(f"🔧 初始化客户端 {client_name} 的上传状态")
+            logger.info(f"🔧 初始化客户端 {client_name} 的上传状态，启动 {consumer_count} 个消费者")
 
-    async def _client_upload_processor(self, client_name: str):
+    async def _client_upload_processor(self, client_name: str, consumer_id: int = 0):
         """
-        客户端上传处理器 - 每个客户端一个独立的处理协程
+        客户端上传处理器 - 每个客户端多个并发处理协程
         """
         state = self.client_upload_states[client_name]
-        logger.info(f"🚀 启动客户端 {client_name} 的上传处理器")
+        logger.info(f"🚀 启动客户端 {client_name} 的上传处理器 #{consumer_id}")
 
         while not self._shutdown:
             try:
-                # 从队列获取上传任务，设置超时避免无限等待
+                # 从队列获取上传任务，减少超时时间提高响应速度
                 try:
                     upload_task = await asyncio.wait_for(
-                        state.upload_queue.get(), timeout=1.0
+                        state.upload_queue.get(), timeout=0.5
                     )
                 except asyncio.TimeoutError:
                     continue
@@ -169,15 +172,24 @@ class UploadService(UploadHandlerInterface):
                 if upload_task is None:  # 停止信号
                     break
 
-                async with state.upload_lock:
+                # 只对媒体组处理加锁，单条消息可以并发处理
+                if upload_task['type'] == 'media_group':
+                    async with state.upload_lock:
+                        await self._process_upload_task(state, upload_task)
+                else:
+                    # 单条消息可以并发处理，不需要锁
                     await self._process_upload_task(state, upload_task)
 
-            except Exception as e:
-                logger.error(f"客户端 {client_name} 上传处理失败: {e}")
+                # 标记任务完成
+                state.upload_queue.task_done()
 
-            finally:
-                if not state.upload_queue.empty():
+            except Exception as e:
+                logger.error(f"客户端 {client_name} 消费者 #{consumer_id} 上传处理失败: {e}")
+                # 确保即使出错也要标记任务完成
+                try:
                     state.upload_queue.task_done()
+                except ValueError:
+                    pass  # 队列可能已经空了
 
         logger.info(f"🛑 客户端 {client_name} 的上传处理器已停止")
 
@@ -345,14 +357,24 @@ class UploadService(UploadHandlerInterface):
 
         # 设置关闭标志并停止所有上传处理任务
         self._shutdown = True
-        for client_name, task in self.upload_tasks.items():
+
+        # 为每个客户端发送停止信号给所有消费者
+        for client_name in self.client_upload_states.keys():
+            state = self.client_upload_states[client_name]
+            # 为每个消费者发送一个停止信号
+            consumer_count = sum(1 for task_name in self.upload_tasks.keys()
+                               if task_name.startswith(f"{client_name}_consumer_"))
+            for _ in range(consumer_count):
+                await state.upload_queue.put(None)
+
+        # 等待所有任务完成
+        for task_name, task in self.upload_tasks.items():
             if not task.done():
-                # 发送停止信号
-                await self.client_upload_states[client_name].upload_queue.put(None)
                 try:
                     await asyncio.wait_for(task, timeout=5.0)
+                    logger.info(f"🛑 {task_name} 的上传处理器已停止")
                 except asyncio.TimeoutError:
-                    logger.warning(f"客户端 {client_name} 的上传任务超时，强制取消")
+                    logger.warning(f"{task_name} 的上传任务超时，强制取消")
                     task.cancel()
 
         logger.info("✅ 上传服务已关闭")

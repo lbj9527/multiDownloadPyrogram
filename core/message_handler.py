@@ -13,7 +13,6 @@ from utils import get_logger, sanitize_filename
 from .file_processor import FileProcessor
 from .storage_strategies import StorageStrategyFactory, StorageStrategyInterface
 from .media_group_utils import MediaGroupUtils
-from interfaces.core_interfaces import UploadHandlerInterface, NullUploadHandler
 from config import app_settings
 
 logger = get_logger(__name__)
@@ -22,9 +21,16 @@ logger = get_logger(__name__)
 class MessageHandler:
     """消息处理器"""
 
-    def __init__(self, file_processor: FileProcessor, upload_handler: Optional[UploadHandlerInterface] = None):
+    def __init__(self, file_processor: FileProcessor, upload_coordinator=None):
+        """
+        初始化消息处理器
+
+        Args:
+            file_processor: 文件处理器
+            upload_coordinator: 上传协调器实例
+        """
         self.file_processor = file_processor
-        self.upload_handler = upload_handler or NullUploadHandler()
+        self.upload_coordinator = upload_coordinator
         self.supported_media_types = {
             'photo', 'video', 'audio', 'voice',
             'video_note', 'animation', 'document', 'sticker'
@@ -53,9 +59,11 @@ class MessageHandler:
             # 获取或创建存储策略
             if self.storage_strategy is None:
                 storage_mode = app_settings.storage.storage_mode
+                logger.info(f"🔧 [MessageHandler] 创建存储策略: {storage_mode}")
                 self.storage_strategy = StorageStrategyFactory.create_strategy(
-                    storage_mode, self.upload_handler
+                    storage_mode, self.upload_coordinator
                 )
+                logger.info(f"✅ [MessageHandler] 存储策略已创建: {type(self.storage_strategy).__name__}")
 
             # 使用策略处理消息
             return await self.storage_strategy.process_message(client, message, channel, self)

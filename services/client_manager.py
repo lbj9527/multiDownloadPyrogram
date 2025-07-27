@@ -41,7 +41,7 @@ class ClientManager:
         client_infos = []
         
         for i, session_file in enumerate(session_files, 1):
-            client_name = f"client_{i}"
+            client_name = session_file  # 直接使用会话文件名，如 client_session_1
             
             try:
                 # 创建客户端信息
@@ -84,6 +84,7 @@ class ClientManager:
             "api_hash": self.telegram_config.api_hash,
             "workdir": "sessions",
             "workers": 4,
+            "max_concurrent_transmissions": 2,  # 设置最大并发传输数为2
             "sleep_threshold": 10
         }
 
