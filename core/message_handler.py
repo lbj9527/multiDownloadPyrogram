@@ -12,6 +12,7 @@ from models import MediaInfo, FileInfo, FileType
 from utils import get_logger, sanitize_filename
 from .file_processor import FileProcessor
 from .storage_strategies import StorageStrategyFactory, StorageStrategyInterface
+from .media_group_utils import MediaGroupUtils
 from interfaces.core_interfaces import UploadHandlerInterface, NullUploadHandler
 from config import app_settings
 
@@ -80,17 +81,8 @@ class MessageHandler:
                 message.media)
     
     def is_media_group_message(self, message: Any) -> bool:
-        """
-        检查是否为媒体组消息
-        
-        Args:
-            message: 消息对象
-            
-        Returns:
-            是否为媒体组消息
-        """
-        return (hasattr(message, 'media_group_id') and 
-                message.media_group_id is not None)
+        """检查是否为媒体组消息"""
+        return MediaGroupUtils.is_media_group_message(message)
     
     async def _process_media_message(
         self,
@@ -371,27 +363,9 @@ class MessageHandler:
             return None
     
     def _generate_filename(self, message: Any) -> str:
-        """
-        生成文件名（与原始程序保持一致）
-
-        Args:
-            message: 消息对象
-
-        Returns:
-            生成的文件名
-        """
-        # 检查是否为媒体组消息
-        if self.is_media_group_message(message):
-            # 媒体组消息：媒体组ID-消息ID.扩展名
-            base_name = f"{message.media_group_id}-{message.id}"
-        else:
-            # 单条消息：msg-消息ID.扩展名
-            base_name = f"msg-{message.id}"
-
-        # 获取文件扩展名
+        """生成文件名"""
         extension = self._get_file_extension(message)
-        filename = f"{base_name}{extension}"
-
+        filename = MediaGroupUtils.generate_filename_for_message(message, extension)
         return sanitize_filename(filename)
     
     def _get_file_extension(self, message: Any) -> str:
@@ -487,8 +461,9 @@ class MessageHandler:
             # 使用同步文件操作（简化处理）
             with open(text_file, "a", encoding="utf-8") as f:
                 # 检查是否为媒体组消息
-                if self.is_media_group_message(message):
-                    f.write(f"消息ID: {message.id} (媒体组: {message.media_group_id})\n")
+                group_id = MediaGroupUtils.get_media_group_id(message)
+                if group_id:
+                    f.write(f"消息ID: {message.id} (媒体组: {group_id})\n")
                 else:
                     f.write(f"消息ID: {message.id}\n")
 

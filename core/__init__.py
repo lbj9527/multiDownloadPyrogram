@@ -13,6 +13,7 @@ from .storage_strategies import (
     UploadStorageStrategy,
     HybridStorageStrategy
 )
+from .media_group_utils import MediaGroupUtils
 
 __all__ = [
     'TelegramDownloader',
@@ -22,5 +23,6 @@ __all__ = [
     'StorageStrategyFactory',
     'RawStorageStrategy',
     'UploadStorageStrategy',
-    'HybridStorageStrategy'
+    'HybridStorageStrategy',
+    'MediaGroupUtils'
 ]

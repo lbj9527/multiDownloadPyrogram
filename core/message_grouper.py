@@ -10,6 +10,7 @@ from pyrogram.errors import FloodWait
 
 from models.message_group import MessageGroup, MessageGroupCollection
 from utils import get_logger, retry_async
+from .media_group_utils import MediaGroupUtils
 
 logger = get_logger(__name__)
 
@@ -167,8 +168,7 @@ class MessageGrouper:
     
     def _is_media_group_message(self, message: Any) -> bool:
         """检查是否为媒体组消息"""
-        return (hasattr(message, 'media_group_id') and 
-                message.media_group_id is not None)
+        return MediaGroupUtils.is_media_group_message(message)
     
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

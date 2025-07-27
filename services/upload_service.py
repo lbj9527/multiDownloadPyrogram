@@ -16,6 +16,7 @@ from models import MediaInfo, FileInfo
 from utils import get_logger, sanitize_filename
 from config import app_settings
 from interfaces.core_interfaces import UploadHandlerInterface
+from core.media_group_utils import MediaGroupUtils
 
 logger = get_logger(__name__)
 
@@ -114,7 +115,7 @@ class UploadService(UploadHandlerInterface):
 
             # 创建上传任务
             upload_task = {
-                'type': 'media_group' if self._is_media_group_message(original_message) else 'single',
+                'type': 'media_group' if MediaGroupUtils.is_media_group_message(original_message) else 'single',
                 'message': original_message,
                 'media_data': media_data,
                 'file_path': file_path,
@@ -545,7 +546,7 @@ class UploadService(UploadHandlerInterface):
 
     def _is_media_group_message(self, message: Any) -> bool:
         """检查消息是否属于媒体组"""
-        return hasattr(message, 'media_group_id') and message.media_group_id is not None
+        return MediaGroupUtils.is_media_group_message(message)
 
     def _has_media(self, message: Any) -> bool:
         """检查消息是否包含媒体"""
@@ -576,29 +577,12 @@ class UploadService(UploadHandlerInterface):
         """获取消息说明文字"""
         if not self.upload_config.preserve_captions:
             return None
-
-        # 优先使用caption，其次使用text
-        if hasattr(message, 'caption') and message.caption:
-            return message.caption
-        elif hasattr(message, 'text') and message.text:
-            return message.text
-
-        return None
+        return MediaGroupUtils.get_message_caption(message)
 
     def _generate_filename(self, message: Any) -> str:
         """生成文件名"""
-        # 检查是否为媒体组消息
-        if self._is_media_group_message(message):
-            # 媒体组消息：媒体组ID-消息ID.扩展名
-            base_name = f"{message.media_group_id}-{message.id}"
-        else:
-            # 单条消息：msg-消息ID.扩展名
-            base_name = f"msg-{message.id}"
-
-        # 获取文件扩展名
         extension = self._get_file_extension(message)
-        filename = f"{base_name}{extension}"
-
+        filename = MediaGroupUtils.generate_filename_for_message(message, extension)
         return sanitize_filename(filename)
 
     def _get_file_extension(self, message: Any) -> str:
