@@ -11,6 +11,7 @@ from pyrogram import Client
 from models import MediaInfo, FileInfo, FileType
 from utils import get_logger, sanitize_filename
 from .file_processor import FileProcessor
+from interfaces.core_interfaces import UploadHandlerInterface, NullUploadHandler
 from config import app_settings
 
 logger = get_logger(__name__)
@@ -19,9 +20,9 @@ logger = get_logger(__name__)
 class MessageHandler:
     """消息处理器"""
 
-    def __init__(self, file_processor: FileProcessor, upload_service=None):
+    def __init__(self, file_processor: FileProcessor, upload_handler: Optional[UploadHandlerInterface] = None):
         self.file_processor = file_processor
-        self.upload_service = upload_service
+        self.upload_handler = upload_handler or NullUploadHandler()
         self.supported_media_types = {
             'photo', 'video', 'audio', 'voice',
             'video_note', 'animation', 'document', 'sticker'
@@ -86,8 +87,8 @@ class MessageHandler:
         try:
             logger.info(f"🔄 上传模式处理消息: {message.id}")
 
-            if not self.upload_service:
-                logger.error("上传服务未初始化")
+            if not self.upload_handler.is_enabled():
+                logger.error("上传功能未启用")
                 return False
 
             if self.has_media(message):
@@ -96,7 +97,7 @@ class MessageHandler:
                 media_data = await self._download_media_to_memory(client, message)
                 if media_data:
                     logger.info(f"📤 上传媒体消息: {message.id}, 大小: {len(media_data)} 字节")
-                    return await self.upload_service.upload_message(
+                    return await self.upload_handler.handle_upload(
                         client, message, media_data=media_data
                     )
                 else:
@@ -105,7 +106,7 @@ class MessageHandler:
             else:
                 logger.info(f"📤 上传文本消息: {message.id}")
                 # 直接上传文本消息
-                return await self.upload_service.upload_message(client, message)
+                return await self.upload_handler.handle_upload(client, message)
 
         except Exception as e:
             logger.error(f"上传模式处理消息失败: {e}")
@@ -124,16 +125,16 @@ class MessageHandler:
 
             # 再执行上传模式
             upload_success = False
-            if self.upload_service:
+            if self.upload_handler.is_enabled():
                 if self.has_media(message):
                     # 使用已下载的文件进行上传
                     file_path = await self._get_downloaded_file_path(client, message, channel)
                     if file_path and file_path.exists():
-                        upload_success = await self.upload_service.upload_message(
+                        upload_success = await self.upload_handler.handle_upload(
                             client, message, file_path=file_path
                         )
                 else:
-                    upload_success = await self.upload_service.upload_message(client, message)
+                    upload_success = await self.upload_handler.handle_upload(client, message)
 
             # 只要有一个成功就算成功
             return raw_success or upload_success

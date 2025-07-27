@@ -28,11 +28,13 @@ class TelegramDownloaderApp:
 
         # 初始化上传服务（如果启用）
         self.upload_service = None
+        upload_handler = None
         if app_settings.upload.enabled:
             self.upload_service = UploadService()
+            upload_handler = self.upload_service  # 直接使用UploadService，它现在实现了接口
             logger.info("✅ 上传服务已启用")
 
-        self.downloader = TelegramDownloader(self.file_processor, self.upload_service)
+        self.downloader = TelegramDownloader(self.file_processor, upload_handler)
         self.download_interface = DownloadInterface(
             self.client_manager,
             self.downloader

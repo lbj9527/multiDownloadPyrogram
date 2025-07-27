@@ -4,7 +4,19 @@
 """
 
 from .download_interface import DownloadInterface
+from .core_interfaces import (
+    MessageProcessorInterface,
+    UploadHandlerInterface,
+    FileProcessorInterface,
+    NullUploadHandler,
+    ProcessResult
+)
 
 __all__ = [
-    'DownloadInterface'
+    'DownloadInterface',
+    'MessageProcessorInterface',
+    'UploadHandlerInterface',
+    'FileProcessorInterface',
+    'NullUploadHandler',
+    'ProcessResult'
 ]

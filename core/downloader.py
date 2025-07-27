@@ -14,6 +14,7 @@ from models import DownloadTask, TaskRange, TaskResult, TaskStatus
 from utils import get_logger, log_performance, retry_async
 from .message_handler import MessageHandler
 from .file_processor import FileProcessor
+from interfaces.core_interfaces import UploadHandlerInterface, NullUploadHandler
 
 logger = get_logger(__name__)
 
@@ -21,10 +22,10 @@ logger = get_logger(__name__)
 class TelegramDownloader:
     """Telegram下载器"""
 
-    def __init__(self, file_processor: FileProcessor, upload_service=None):
+    def __init__(self, file_processor: FileProcessor, upload_handler: UploadHandlerInterface = None):
         self.file_processor = file_processor
-        self.upload_service = upload_service
-        self.message_handler = MessageHandler(file_processor, upload_service)
+        self.upload_handler = upload_handler or NullUploadHandler()
+        self.message_handler = MessageHandler(file_processor, upload_handler)
         self.stats = {
             "start_time": 0,
             "total_downloaded": 0,

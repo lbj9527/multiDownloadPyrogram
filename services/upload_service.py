@@ -15,6 +15,7 @@ from pyrogram.types import InputMediaPhoto, InputMediaVideo, InputMediaAudio, In
 from models import MediaInfo, FileInfo
 from utils import get_logger, sanitize_filename
 from config import app_settings
+from interfaces.core_interfaces import UploadHandlerInterface
 
 logger = get_logger(__name__)
 
@@ -30,7 +31,7 @@ class ClientUploadState:
     upload_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-class UploadService:
+class UploadService(UploadHandlerInterface):
     """优化的上传服务类"""
 
     def __init__(self):
@@ -45,7 +46,38 @@ class UploadService:
             "media_groups_uploaded": 0
         }
         self._shutdown = False
-    
+
+    # 实现UploadHandlerInterface接口
+    async def handle_upload(
+        self,
+        client: Client,
+        message: Any,
+        media_data: Optional[bytes] = None,
+        file_path: Optional[Path] = None
+    ) -> bool:
+        """
+        处理上传请求 - 实现UploadHandlerInterface接口
+
+        Args:
+            client: Pyrogram客户端
+            message: 原始消息对象
+            media_data: 媒体数据（内存中）
+            file_path: 文件路径（本地文件）
+
+        Returns:
+            是否上传成功
+        """
+        return await self.upload_message(
+            client=client,
+            original_message=message,
+            media_data=media_data,
+            file_path=file_path
+        )
+
+    def is_enabled(self) -> bool:
+        """检查上传功能是否启用 - 实现UploadHandlerInterface接口"""
+        return self.upload_config.enabled
+
     async def upload_message(
         self,
         client: Client,
