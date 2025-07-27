@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 from pyrogram import Client
 from pyrogram.types import InputMediaPhoto, InputMediaVideo, InputMediaAudio, InputMediaDocument
 
-from models import MediaInfo, FileInfo
+# from models import MediaInfo, FileInfo  # 暂时注释掉未使用的导入
 from utils import get_logger, sanitize_filename
 from config import app_settings
 from interfaces.core_interfaces import UploadHandlerInterface

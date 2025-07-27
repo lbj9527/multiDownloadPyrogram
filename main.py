@@ -227,18 +227,38 @@ class TelegramDownloaderApp:
     async def cleanup(self):
         """清理资源"""
         logger.info("🧹 清理资源...")
-        
+
         try:
+            # 清理存储策略中的并发任务
+            await self._cleanup_storage_strategies()
+
             # 关闭压缩文件句柄
             self.file_processor.close_compression_handles()
-            
+
             # 断开所有客户端
             await self.client_manager.disconnect_all_clients()
-            
+
             logger.info("✅ 资源清理完成")
-            
+
         except Exception as e:
             logger.error(f"❌ 清理资源失败: {e}")
+
+    async def _cleanup_storage_strategies(self):
+        """清理存储策略中的并发任务"""
+        try:
+            # 获取消息处理器的存储策略
+            message_handler = self.downloader.message_handler
+            if hasattr(message_handler, 'storage_strategy') and message_handler.storage_strategy:
+                storage_strategy = message_handler.storage_strategy
+
+                # 如果存储策略支持清理
+                if hasattr(storage_strategy, 'cleanup'):
+                    logger.info("🔄 清理存储策略中的并发任务...")
+                    await storage_strategy.cleanup()
+                    logger.info("✅ 存储策略清理完成")
+
+        except Exception as e:
+            logger.error(f"清理存储策略失败: {e}")
 
     async def _display_upload_stats(self):
         """显示上传统计信息"""
