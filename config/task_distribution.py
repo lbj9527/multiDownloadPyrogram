@@ -21,10 +21,7 @@ except ImportError:
     # 如果导入失败，使用本地定义
     class TaskDistributionMode(str, Enum):
         """任务分配模式"""
-        RANGE_BASED = "range_based"
         MEDIA_GROUP_AWARE = "media_group_aware"
-        LOAD_BALANCED = "load_balanced"
-        AUTO = "auto"  # 自动选择
 
     class LoadBalanceMetric(str, Enum):
         """负载均衡指标"""

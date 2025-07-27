@@ -14,9 +14,7 @@ from .base import (
     DistributionMetrics
 )
 from .strategies import (
-    RangeBasedDistributionStrategy,
     MediaGroupAwareDistributionStrategy,
-    LoadBalancedDistributionStrategy
 )
 from models.message_group import MessageGroupCollection, TaskDistributionResult
 
@@ -29,9 +27,7 @@ class TaskDistributor:
     def __init__(self, config: Optional[DistributionConfig] = None):
         self.config = config or DistributionConfig()
         self._strategies: Dict[DistributionMode, Type[TaskDistributionStrategy]] = {
-            DistributionMode.RANGE_BASED: RangeBasedDistributionStrategy,
             DistributionMode.MEDIA_GROUP_AWARE: MediaGroupAwareDistributionStrategy,
-            DistributionMode.LOAD_BALANCED: LoadBalancedDistributionStrategy
         }
         self._current_strategy: Optional[TaskDistributionStrategy] = None
         self.stats = {
@@ -237,27 +233,14 @@ class TaskDistributor:
     ) -> DistributionMode:
         """
         推荐最适合的分配策略
-        
+
         Args:
             message_collection: 消息集合
             client_names: 客户端名称列表
             priority: 优先级 ("balance": 负载均衡, "speed": 速度, "integrity": 完整性)
-            
+
         Returns:
             推荐的分配策略
         """
-        stats = message_collection.get_statistics()
-        
-        # 根据数据特征和优先级推荐策略
-        if priority == "speed" and stats["media_groups_count"] == 0:
-            # 没有媒体组且优先速度，使用范围分配
-            return DistributionMode.RANGE_BASED
-        elif priority == "integrity" or stats["media_groups_count"] > 0:
-            # 有媒体组或优先完整性，使用媒体组感知
-            return DistributionMode.MEDIA_GROUP_AWARE
-        elif priority == "balance":
-            # 优先负载均衡，使用高级负载均衡
-            return DistributionMode.LOAD_BALANCED
-        else:
-            # 默认使用媒体组感知
-            return DistributionMode.MEDIA_GROUP_AWARE
+        # 现在只有一个策略，直接返回媒体组感知分配
+        return DistributionMode.MEDIA_GROUP_AWARE

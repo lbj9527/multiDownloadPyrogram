@@ -5,9 +5,7 @@
 
 from .base import TaskDistributionStrategy, DistributionConfig, DistributionMode
 from .strategies import (
-    RangeBasedDistributionStrategy,
     MediaGroupAwareDistributionStrategy,
-    LoadBalancedDistributionStrategy
 )
 from .distributor import TaskDistributor
 
@@ -15,8 +13,6 @@ __all__ = [
     'TaskDistributionStrategy',
     'DistributionConfig',
     'DistributionMode',
-    'RangeBasedDistributionStrategy',
     'MediaGroupAwareDistributionStrategy',
-    'LoadBalancedDistributionStrategy',
     'TaskDistributor'
 ]

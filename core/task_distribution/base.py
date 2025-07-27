@@ -12,9 +12,7 @@ from models.message_group import MessageGroupCollection, TaskDistributionResult
 
 class DistributionMode(Enum):
     """分配模式"""
-    RANGE_BASED = "range_based"           # 基于范围的分配（原有方式）
     MEDIA_GROUP_AWARE = "media_group_aware"  # 媒体组感知分配
-    LOAD_BALANCED = "load_balanced"       # 负载均衡分配
     CUSTOM = "custom"                     # 自定义分配
 
 

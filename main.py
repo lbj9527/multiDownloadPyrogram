@@ -85,23 +85,14 @@ class TelegramDownloaderApp:
             download_config = app_settings.download
 
             # 执行下载 - 使用媒体组感知的下载方法
-            if app_settings.task_distribution.mode.value != "range_based":
-                logger.info("🧠 使用媒体组感知下载模式")
-                results = await self.download_interface.download_messages_with_media_group_awareness(
-                    channel=download_config.target_channel,
-                    start_message_id=download_config.start_message_id,
-                    end_message_id=download_config.end_message_id,
-                    batch_size=download_config.batch_size,
-                    task_distribution_config=app_settings.task_distribution
-                )
-            else:
-                logger.info("📏 使用传统范围分配下载模式")
-                results = await self.download_interface.download_messages(
-                    channel=download_config.target_channel,
-                    start_message_id=download_config.start_message_id,
-                    end_message_id=download_config.end_message_id,
-                    batch_size=download_config.batch_size
-                )
+            logger.info("🧠 使用媒体组感知下载模式")
+            results = await self.download_interface.download_messages_with_media_group_awareness(
+                channel=download_config.target_channel,
+                start_message_id=download_config.start_message_id,
+                end_message_id=download_config.end_message_id,
+                batch_size=download_config.batch_size,
+                task_distribution_config=app_settings.task_distribution
+            )
 
             # 计算下载耗时
             download_elapsed_time = time.time() - start_time
