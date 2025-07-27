@@ -6,9 +6,21 @@
 from .downloader import TelegramDownloader
 from .file_processor import FileProcessor
 from .message_handler import MessageHandler
+from .storage_strategies import (
+    StorageStrategyInterface,
+    StorageStrategyFactory,
+    RawStorageStrategy,
+    UploadStorageStrategy,
+    HybridStorageStrategy
+)
 
 __all__ = [
     'TelegramDownloader',
-    'FileProcessor', 
-    'MessageHandler'
+    'FileProcessor',
+    'MessageHandler',
+    'StorageStrategyInterface',
+    'StorageStrategyFactory',
+    'RawStorageStrategy',
+    'UploadStorageStrategy',
+    'HybridStorageStrategy'
 ]
