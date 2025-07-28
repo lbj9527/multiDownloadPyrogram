@@ -60,7 +60,28 @@ class MessageGrouper:
         
         # 记录统计信息
         stats = collection.get_statistics()
-        
+
+        return collection
+
+    def group_messages_from_list(self, messages: List[Any]) -> MessageGroupCollection:
+        """
+        从已获取的消息列表进行媒体组分析
+
+        Args:
+            messages: 消息对象列表
+
+        Returns:
+            消息组集合
+        """
+        logger.info(f"开始分析 {len(messages)} 条消息的媒体组")
+
+        # 直接使用现有的分组逻辑
+        collection = self._group_messages(messages)
+
+        # 记录统计信息
+        stats = collection.get_statistics()
+        logger.info(f"媒体组分析完成: {stats['media_groups_count']} 个媒体组, {stats['single_messages_count']} 条单独消息")
+
         return collection
     
     async def _fetch_messages_in_batches(

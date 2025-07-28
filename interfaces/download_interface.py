@@ -353,8 +353,14 @@ class DownloadInterface:
             raise ValueError("没有可用的客户端")
 
         try:
-            # 1. 消息分组阶段
-            logger.info("📦 开始消息分组...")
+            # 1. 并发获取消息对象阶段
+            logger.info("📦 并发获取消息对象...")
+            all_messages = await self._fetch_messages_concurrently(
+                available_clients, channel, start_message_id, end_message_id, batch_size
+            )
+
+            # 2. 消息分组阶段
+            logger.info("🧠 分析媒体组...")
             # 使用传入的配置或默认值
             max_retries = 3
             if task_distribution_config and hasattr(task_distribution_config, 'max_retries'):
@@ -365,11 +371,8 @@ class DownloadInterface:
                 max_retries=max_retries
             )
 
-            # 使用第一个客户端获取并分组消息
-            first_client = self.client_manager.get_client(available_clients[0])
-            message_collection = await message_grouper.group_messages_from_range(
-                first_client, channel, start_message_id, end_message_id
-            )
+            # 从已获取的消息列表进行分组
+            message_collection = message_grouper.group_messages_from_list(all_messages)
 
             # 记录分组统计
             grouping_stats = message_collection.get_statistics()
@@ -406,6 +409,8 @@ class DownloadInterface:
 
             # 执行任务分配
             task_distributor = TaskDistributor(distribution_config)
+            # 使用第一个可用客户端进行任务分配
+            first_client = self.client_manager.get_client(available_clients[0])
             distribution_result = await task_distributor.distribute_tasks(
                 message_collection, available_clients, client=first_client, channel=channel
             )
@@ -442,6 +447,200 @@ class DownloadInterface:
         except Exception as e:
             logger.error(f"媒体组感知下载失败: {e}")
             raise
+
+    async def _fetch_messages_concurrently(
+        self,
+        available_clients: List[str],
+        channel: str,
+        start_message_id: int,
+        end_message_id: int,
+        batch_size: int
+    ) -> List[Any]:
+        """
+        并发获取消息对象
+
+        Args:
+            available_clients: 可用客户端列表
+            channel: 频道名称
+            start_message_id: 开始消息ID
+            end_message_id: 结束消息ID
+            batch_size: 批次大小
+
+        Returns:
+            合并后的消息对象列表
+        """
+        client_count = len(available_clients)
+        logger.info(f"使用 {client_count} 个客户端并发获取消息")
+
+        # 分割消息范围
+        message_ranges = self._split_message_range(start_message_id, end_message_id, client_count)
+
+        # 创建并发任务
+        fetch_tasks = []
+        for i, (range_start, range_end) in enumerate(message_ranges):
+            client_name = available_clients[i]
+            client = self.client_manager.get_client(client_name)
+
+            logger.info(f"客户端 {client_name} 负责消息范围: {range_start}-{range_end}")
+
+            # 创建消息获取任务
+            task = self._fetch_message_range_for_client(
+                client, channel, range_start, range_end, batch_size, client_name
+            )
+            fetch_tasks.append(task)
+
+        # 并发执行所有获取任务
+        logger.info("🚀 开始并发获取消息...")
+        message_batches = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        # 处理获取结果
+        all_messages = []
+        for i, batch_result in enumerate(message_batches):
+            client_name = available_clients[i]
+
+            if isinstance(batch_result, Exception):
+                logger.error(f"客户端 {client_name} 获取消息失败: {batch_result}")
+                # 可以在这里实现重试逻辑，暂时跳过
+                continue
+
+            if batch_result:
+                all_messages.extend(batch_result)
+                logger.info(f"客户端 {client_name} 成功获取 {len(batch_result)} 条消息")
+
+        # 合并并排序消息
+        sorted_messages = self._merge_and_sort_messages(all_messages)
+        logger.info(f"✅ 并发获取完成，总计 {len(sorted_messages)} 条消息")
+
+        return sorted_messages
+
+    def _split_message_range(
+        self,
+        start_id: int,
+        end_id: int,
+        client_count: int
+    ) -> List[tuple]:
+        """
+        将消息范围平均分割给多个客户端
+
+        Args:
+            start_id: 开始消息ID
+            end_id: 结束消息ID
+            client_count: 客户端数量
+
+        Returns:
+            消息范围列表 [(start1, end1), (start2, end2), ...]
+        """
+        total_messages = end_id - start_id + 1
+        messages_per_client = total_messages // client_count
+        remainder = total_messages % client_count
+
+        ranges = []
+        current_start = start_id
+
+        for i in range(client_count):
+            # 前remainder个客户端多分配1条消息
+            current_count = messages_per_client + (1 if i < remainder else 0)
+            current_end = current_start + current_count - 1
+
+            ranges.append((current_start, current_end))
+            current_start = current_end + 1
+
+        return ranges
+
+    def _merge_and_sort_messages(self, messages: List[Any]) -> List[Any]:
+        """
+        合并消息列表并按消息ID排序
+
+        Args:
+            messages: 消息对象列表
+
+        Returns:
+            排序后的消息列表
+        """
+        # 过滤None消息并按ID排序
+        valid_messages = [msg for msg in messages if msg is not None]
+        sorted_messages = sorted(valid_messages, key=lambda msg: msg.id if msg else 0)
+
+        return sorted_messages
+
+    async def _fetch_message_range_for_client(
+        self,
+        client,
+        channel: str,
+        start_id: int,
+        end_id: int,
+        batch_size: int,
+        client_name: str
+    ) -> List[Any]:
+        """
+        单个客户端获取指定范围的消息
+
+        Args:
+            client: Pyrogram客户端
+            channel: 频道名称
+            start_id: 开始消息ID
+            end_id: 结束消息ID
+            batch_size: 批次大小
+            client_name: 客户端名称（用于日志）
+
+        Returns:
+            消息对象列表
+        """
+        from core.message_grouper import MessageGrouper
+        from pyrogram.errors import FloodWait
+        import asyncio
+
+        # 生成消息ID列表
+        message_ids = list(range(start_id, end_id + 1))
+        all_messages = []
+
+        # 按批次获取消息
+        for i in range(0, len(message_ids), batch_size):
+            batch_ids = message_ids[i:i + batch_size]
+
+            try:
+                # 获取消息批次
+                messages = await client.get_messages(channel, batch_ids)
+
+                # 确保返回列表格式
+                if not isinstance(messages, list):
+                    messages = [messages] if messages else []
+
+                all_messages.extend(messages)
+
+                # 显示进度
+                progress = (i + len(batch_ids)) / len(message_ids) * 100
+                logger.debug(f"{client_name} 获取进度: {progress:.1f}%")
+
+            except FloodWait as e:
+                logger.warning(f"{client_name} 遇到限流，等待 {e.value} 秒")
+                await asyncio.sleep(e.value)
+                # 重试当前批次
+                try:
+                    messages = await client.get_messages(channel, batch_ids)
+                    if not isinstance(messages, list):
+                        messages = [messages] if messages else []
+                    all_messages.extend(messages)
+                except Exception as retry_e:
+                    logger.error(f"{client_name} 重试获取消息失败: {retry_e}")
+                    # 添加对应数量的None以保持索引
+                    all_messages.extend([None] * len(batch_ids))
+
+            except Exception as e:
+                logger.error(f"{client_name} 获取消息批次失败: {e}")
+                # 添加对应数量的None以保持索引
+                all_messages.extend([None] * len(batch_ids))
+
+            # 批次间延迟
+            if i + batch_size < len(message_ids):
+                from config import app_settings
+                await asyncio.sleep(app_settings.download.batch_delay)
+
+        # 过滤有效消息
+        valid_messages = [msg for msg in all_messages if msg is not None]
+        logger.info(f"{client_name} 完成获取: {len(valid_messages)} 条有效消息")
+
+        return valid_messages
 
     def _create_media_group_aware_task(
         self,
