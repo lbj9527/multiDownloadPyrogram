@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 # 导入常量
-from config.constants import MB
+from config.constants import MB, SUPPORTED_MEDIA_TYPES
 
 
 @dataclass
@@ -37,9 +37,7 @@ class MessageGroup:
             文件大小（字节），如果无法获取则返回 None
         """
         # 检查所有媒体类型的 file_size 属性
-        media_types = ['photo', 'video', 'audio', 'document', 'animation', 'voice', 'video_note']
-
-        for media_type in media_types:
+        for media_type in SUPPORTED_MEDIA_TYPES:
             if hasattr(message, media_type):
                 media = getattr(message, media_type)
                 if media and hasattr(media, 'file_size') and media.file_size:

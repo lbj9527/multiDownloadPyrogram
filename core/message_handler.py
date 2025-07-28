@@ -14,6 +14,7 @@ from .file_processor import FileProcessor
 from .storage_strategies import StorageStrategyFactory, StorageStrategyInterface
 from .media_group_utils import MediaGroupUtils
 from config import app_settings
+from config.constants import SUPPORTED_MEDIA_TYPES, FILE_EXTENSIONS, MEDIA_TYPE_DEFAULT_EXTENSIONS
 
 logger = get_logger(__name__)
 
@@ -31,10 +32,7 @@ class MessageHandler:
         """
         self.file_processor = file_processor
         self.upload_coordinator = upload_coordinator
-        self.supported_media_types = {
-            'photo', 'video', 'audio', 'voice',
-            'video_note', 'animation', 'document', 'sticker'
-        }
+        self.supported_media_types = SUPPORTED_MEDIA_TYPES
         # 初始化存储策略
         self.storage_strategy: Optional[StorageStrategyInterface] = None
     
@@ -399,28 +397,20 @@ class MessageHandler:
                 # 根据MIME类型推断扩展名
                 return self._get_extension_from_mime(getattr(message.document, 'mime_type', ''))
 
-        elif hasattr(message, 'video') and message.video:
-            return '.mp4'
-        elif hasattr(message, 'photo') and message.photo:
-            return '.jpg'
-        elif hasattr(message, 'audio') and message.audio:
-            if hasattr(message.audio, 'file_name') and message.audio.file_name:
-                _, ext = os.path.splitext(message.audio.file_name)
-                return ext if ext else '.mp3'
-            return '.mp3'
-        elif hasattr(message, 'voice') and message.voice:
-            return '.ogg'
-        elif hasattr(message, 'video_note') and message.video_note:
-            return '.mp4'
-        elif hasattr(message, 'animation') and message.animation:
-            if hasattr(message.animation, 'file_name') and message.animation.file_name:
-                _, ext = os.path.splitext(message.animation.file_name)
-                return ext if ext else '.gif'
-            return '.gif'
-        elif hasattr(message, 'sticker') and message.sticker:
-            return '.webp'
-        else:
-            return '.bin'
+        # 检查其他媒体类型，使用常量中的默认扩展名
+        for media_type in SUPPORTED_MEDIA_TYPES:
+            if hasattr(message, media_type) and getattr(message, media_type):
+                # 对于有文件名的媒体类型，优先使用原始扩展名
+                media_obj = getattr(message, media_type)
+                if hasattr(media_obj, 'file_name') and media_obj.file_name:
+                    _, ext = os.path.splitext(media_obj.file_name)
+                    if ext:
+                        return ext
+
+                # 使用默认扩展名
+                return MEDIA_TYPE_DEFAULT_EXTENSIONS.get(media_type, '.bin')
+
+        return '.bin'
 
     def _get_extension_from_mime(self, mime_type: str) -> str:
         """
@@ -432,23 +422,7 @@ class MessageHandler:
         Returns:
             文件扩展名
         """
-        mime_to_ext = {
-            'image/jpeg': '.jpg',
-            'image/png': '.png',
-            'image/gif': '.gif',
-            'image/webp': '.webp',
-            'video/mp4': '.mp4',
-            'video/avi': '.avi',
-            'video/mov': '.mov',
-            'audio/mp3': '.mp3',
-            'audio/wav': '.wav',
-            'audio/ogg': '.ogg',
-            'application/pdf': '.pdf',
-            'application/zip': '.zip',
-            'text/plain': '.txt'
-        }
-
-        return mime_to_ext.get(mime_type, '.bin')
+        return FILE_EXTENSIONS.get(mime_type, '.bin')
     
     async def _save_text_message(self, message: Any, channel: str, client: Client = None):
         """

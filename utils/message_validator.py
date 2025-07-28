@@ -9,6 +9,7 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait
 
 from utils import get_logger, retry_async
+from config.constants import SUPPORTED_MEDIA_TYPES
 
 logger = get_logger(__name__)
 
@@ -191,12 +192,7 @@ class MessageValidator:
             return True
         
         # 检查具体的媒体类型
-        media_types = [
-            'photo', 'video', 'audio', 'voice',
-            'video_note', 'animation', 'document', 'sticker'
-        ]
-        
-        for media_type in media_types:
+        for media_type in SUPPORTED_MEDIA_TYPES:
             if hasattr(message, media_type) and getattr(message, media_type):
                 return True
         

@@ -72,13 +72,44 @@ FILE_EXTENSIONS: Dict[str, str] = {
     'application/x-tar': '.tar',
 }
 
-# 文件类型分类
-FILE_TYPE_CATEGORIES: Dict[str, Set[str]] = {
-    'images': {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.svg'},
-    'videos': {'.mp4', '.avi', '.mkv', '.mov', '.webm', '.flv', '.wmv'},
-    'audio': {'.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'},
-    'documents': {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.json', '.xml'},
-    'archives': {'.zip', '.rar', '.7z', '.gz', '.tar'},
+# 文件类型分类（基于FILE_EXTENSIONS自动生成）
+def _generate_file_type_categories() -> Dict[str, Set[str]]:
+    """根据FILE_EXTENSIONS自动生成文件类型分类"""
+    categories = {
+        'images': set(),
+        'videos': set(),
+        'audio': set(),
+        'documents': set(),
+        'archives': set(),
+    }
+
+    # 根据MIME类型前缀分类
+    for mime_type, extension in FILE_EXTENSIONS.items():
+        if mime_type.startswith('image/'):
+            categories['images'].add(extension)
+        elif mime_type.startswith('video/'):
+            categories['videos'].add(extension)
+        elif mime_type.startswith('audio/'):
+            categories['audio'].add(extension)
+        elif mime_type.startswith('application/') and any(x in mime_type for x in ['zip', 'rar', '7z', 'gzip', 'tar']):
+            categories['archives'].add(extension)
+        elif mime_type.startswith(('application/', 'text/')):
+            categories['documents'].add(extension)
+
+    return categories
+
+FILE_TYPE_CATEGORIES: Dict[str, Set[str]] = _generate_file_type_categories()
+
+# 媒体类型到文件扩展名的默认映射（用于没有MIME类型时的回退）
+MEDIA_TYPE_DEFAULT_EXTENSIONS: Dict[str, str] = {
+    'photo': '.jpg',
+    'video': '.mp4',
+    'audio': '.mp3',
+    'voice': '.ogg',
+    'video_note': '.mp4',
+    'animation': '.gif',
+    'document': '.bin',
+    'sticker': '.webp'
 }
 
 

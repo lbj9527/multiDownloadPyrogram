@@ -17,6 +17,7 @@ from utils import get_logger, sanitize_filename
 from config import app_settings
 from interfaces.core_interfaces import UploadHandlerInterface
 from core.media_group_utils import MediaGroupUtils
+from config.constants import FILE_EXTENSIONS, MEDIA_TYPE_DEFAULT_EXTENSIONS
 
 logger = get_logger(__name__)
 
@@ -621,41 +622,18 @@ class UploadService(UploadHandlerInterface):
             else:
                 # 根据MIME类型推断扩展名
                 return self._get_extension_from_mime(getattr(message.document, 'mime_type', ''))
-        elif hasattr(message, 'photo') and message.photo:
-            return '.jpg'
-        elif hasattr(message, 'video') and message.video:
-            return '.mp4'
-        elif hasattr(message, 'audio') and message.audio:
-            return '.mp3'
-        elif hasattr(message, 'voice') and message.voice:
-            return '.ogg'
-        elif hasattr(message, 'video_note') and message.video_note:
-            return '.mp4'
-        elif hasattr(message, 'animation') and message.animation:
-            return '.gif'
-        elif hasattr(message, 'sticker') and message.sticker:
-            return '.webp'
-        else:
-            return '.bin'
+
+        # 检查其他媒体类型，使用常量中的默认扩展名
+        from config.constants import SUPPORTED_MEDIA_TYPES
+        for media_type in SUPPORTED_MEDIA_TYPES:
+            if hasattr(message, media_type) and getattr(message, media_type):
+                return MEDIA_TYPE_DEFAULT_EXTENSIONS.get(media_type, '.bin')
+
+        return '.bin'
 
     def _get_extension_from_mime(self, mime_type: str) -> str:
         """根据MIME类型获取扩展名"""
-        mime_extensions = {
-            'image/jpeg': '.jpg',
-            'image/png': '.png',
-            'image/gif': '.gif',
-            'image/webp': '.webp',
-            'video/mp4': '.mp4',
-            'video/avi': '.avi',
-            'video/mkv': '.mkv',
-            'audio/mpeg': '.mp3',
-            'audio/ogg': '.ogg',
-            'audio/wav': '.wav',
-            'application/pdf': '.pdf',
-            'application/zip': '.zip',
-            'text/plain': '.txt'
-        }
-        return mime_extensions.get(mime_type, '.bin')
+        return FILE_EXTENSIONS.get(mime_type, '.bin')
 
     def reset_stats(self):
         """重置统计信息"""
