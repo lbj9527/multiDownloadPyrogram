@@ -14,6 +14,7 @@ from models import DownloadTask, TaskRange, TaskResult, TaskStatus
 from utils import get_logger, log_performance, retry_async
 from .message_handler import MessageHandler
 from .file_processor import FileProcessor
+from config import app_settings
 
 
 logger = get_logger(__name__)
@@ -124,8 +125,8 @@ class TelegramDownloader:
                     logger.error(f"{client_name} 批量获取消息失败: {e}")
                     failed += len(batch_ids)
                 
-                # 小延迟避免过于频繁的请求
-                await asyncio.sleep(0.1)
+                # 批次间延迟避免过于频繁的请求（可配置）
+                await asyncio.sleep(app_settings.download.batch_delay)
         
         except Exception as e:
             logger.error(f"{client_name} 下载任务失败: {e}")
@@ -191,10 +192,11 @@ class TelegramDownloader:
                         downloaded += 1
                     else:
                         failed += 1
+
                 except Exception as e:
                     failed += 1
                     logger.error(f"处理消息 {message.id} 失败: {e}")
-        
+
         return downloaded, failed
 
     async def _get_channel_info(self, client: Client, channel: str) -> dict:

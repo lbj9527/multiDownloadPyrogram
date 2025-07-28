@@ -95,6 +95,7 @@ if PYDANTIC_AVAILABLE:
         max_concurrent_clients: int = Field(3, description="最大并发客户端数", ge=1, le=10)
         download_directory: str = Field("downloads", description="下载目录")
         session_directory: str = Field("sessions", description="会话文件目录")
+        batch_delay: float = Field(0.1, description="批次间延迟（秒）", ge=0.0, le=5.0)
 
     class UploadConfig(ConfigBase):
         """上传配置"""
@@ -121,6 +122,7 @@ else:
         max_concurrent_clients: int = 3
         download_directory: str = "downloads"
         session_directory: str = "sessions"
+        batch_delay: float = 0.1
 
     @dataclass
     class UploadConfig:
@@ -236,7 +238,8 @@ class AppSettings:
             "batch_size": int(os.getenv("BATCH_SIZE", "200")),
             "max_concurrent_clients": int(os.getenv("MAX_CONCURRENT_CLIENTS", "3")),
             "download_directory": os.getenv("DOWNLOAD_DIRECTORY", "downloads"),
-            "session_directory": os.getenv("SESSION_DIRECTORY", "sessions")
+            "session_directory": os.getenv("SESSION_DIRECTORY", "sessions"),
+            "batch_delay": float(os.getenv("DOWNLOAD_BATCH_DELAY", "0.1"))  # 批次间延迟
         }
 
         upload_data = {
