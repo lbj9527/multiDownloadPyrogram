@@ -8,14 +8,17 @@ from typing import Optional, List, Dict, Any
 from enum import Enum
 import uuid
 
+# 导入常量
+from config.constants import DEFAULT_BATCH_SIZE, TASK_STATUS
+
 
 class TaskStatus(Enum):
     """任务状态枚举"""
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+    PENDING = TASK_STATUS['PENDING']
+    RUNNING = TASK_STATUS['RUNNING']
+    COMPLETED = TASK_STATUS['COMPLETED']
+    FAILED = TASK_STATUS['FAILED']
+    CANCELLED = TASK_STATUS['CANCELLED']
 
 
 @dataclass
@@ -78,7 +81,7 @@ class DownloadTask:
     failed_downloads: int = 0
     
     # 配置信息
-    batch_size: int = 200
+    batch_size: int = DEFAULT_BATCH_SIZE
     storage_mode: str = "hybrid"
     
     # 结果信息

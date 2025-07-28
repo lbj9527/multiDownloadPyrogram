@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+# 导入常量
+from config.constants import MB
+
 
 @dataclass
 class MessageGroup:
@@ -58,21 +61,21 @@ class MessageGroup:
         # 回退到基于实际测试数据的改进估算值
         if hasattr(message, 'media') and message.media:
             if hasattr(message, 'photo') and message.photo:
-                self.estimated_size += 3 * 1024 * 1024  # 3MB (基于实际平均值 2.7MB)
+                self.estimated_size += 3 * MB  # 3MB (基于实际平均值 2.7MB)
             elif hasattr(message, 'video') and message.video:
-                self.estimated_size += 37 * 1024 * 1024  # 37MB (基于实际平均值 36.4MB)
+                self.estimated_size += 37 * MB  # 37MB (基于实际平均值 36.4MB)
             elif hasattr(message, 'audio') and message.audio:
-                self.estimated_size += 5 * 1024 * 1024   # 5MB
+                self.estimated_size += 5 * MB   # 5MB
             elif hasattr(message, 'document') and message.document:
-                self.estimated_size += 10 * 1024 * 1024  # 10MB
+                self.estimated_size += 10 * MB  # 10MB
             elif hasattr(message, 'animation') and message.animation:
-                self.estimated_size += 3 * 1024 * 1024   # 3MB
+                self.estimated_size += 3 * MB   # 3MB
             elif hasattr(message, 'voice') and message.voice:
-                self.estimated_size += 1 * 1024 * 1024   # 1MB
+                self.estimated_size += 1 * MB   # 1MB
             elif hasattr(message, 'video_note') and message.video_note:
-                self.estimated_size += 2 * 1024 * 1024   # 2MB
+                self.estimated_size += 2 * MB   # 2MB
             else:
-                self.estimated_size += 5 * 1024 * 1024   # 5MB default for unknown media
+                self.estimated_size += 5 * MB   # 5MB default for unknown media
         else:
             self.estimated_size += 1024  # 1KB for text messages
     

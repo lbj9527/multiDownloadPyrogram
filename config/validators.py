@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 from pathlib import Path
 from dataclasses import fields, is_dataclass
 
-from .constants import STORAGE_MODES, FILE_TYPE_CATEGORIES
+from .constants import STORAGE_MODES, FILE_TYPE_CATEGORIES, MAX_BATCH_SIZE
 
 
 class ConfigValidator:
@@ -120,8 +120,8 @@ class ConfigValidator:
             errors.append("开始消息ID必须小于结束消息ID")
         
         # 验证批次大小
-        if batch_size <= 0 or batch_size > 200:
-            errors.append("批次大小必须在1-200之间")
+        if batch_size <= 0 or batch_size > MAX_BATCH_SIZE:
+            errors.append(f"批次大小必须在1-{MAX_BATCH_SIZE}之间")
         
         # 验证客户端数量
         if max_concurrent_clients <= 0 or max_concurrent_clients > 10:

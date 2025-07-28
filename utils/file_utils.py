@@ -10,7 +10,7 @@ from typing import Optional, Dict, Set
 import aiofiles
 import asyncio
 
-from config.constants import FILE_EXTENSIONS, FILE_TYPE_CATEGORIES
+from config.constants import FILE_EXTENSIONS, FILE_TYPE_CATEGORIES, MB
 
 
 def sanitize_filename(filename: str, max_length: int = 100) -> str:

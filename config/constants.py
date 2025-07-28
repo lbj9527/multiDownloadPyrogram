@@ -84,17 +84,38 @@ FILE_TYPE_CATEGORIES: Dict[str, Set[str]] = {
 
 
 # 错误重试设置
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BASE_DELAY = 1  # 秒
+DEFAULT_MAX_DELAY = 60  # 秒
+DEFAULT_BACKOFF_FACTOR = 2
 RETRY_SETTINGS: Dict[str, int] = {
-    'max_retries': 3,
-    'base_delay': 1,  # 秒
-    'max_delay': 60,  # 秒
-    'backoff_factor': 2
+    'max_retries': DEFAULT_MAX_RETRIES,
+    'base_delay': DEFAULT_BASE_DELAY,
+    'max_delay': DEFAULT_MAX_DELAY,
+    'backoff_factor': DEFAULT_BACKOFF_FACTOR
 }
+
+# 上传相关常量
+DEFAULT_UPLOAD_ENABLED = False
+DEFAULT_UPLOAD_DELAY = 1.0
+DEFAULT_PRESERVE_MEDIA_GROUPS = True
+DEFAULT_PRESERVE_CAPTIONS = True
+
+# 下载延迟常量
+DEFAULT_BATCH_DELAY = 0.1
+
+# Pyrogram客户端配置常量
+DEFAULT_WORKERS = 4
+DEFAULT_SLEEP_THRESHOLD = 10
 
 # 日志相关常量
 LOG_LEVELS: Set[str] = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
+DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 DEFAULT_LOG_FILE = "logs/downloader.log"
+DEFAULT_LOG_FILE_ENABLED = True
+DEFAULT_LOG_CONSOLE_ENABLED = True
+DEFAULT_VERBOSE_PYROGRAM = False
 
 # 网络相关常量
 DEFAULT_TIMEOUT = 30  # 秒

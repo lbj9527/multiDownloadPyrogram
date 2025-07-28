@@ -13,6 +13,9 @@ except ImportError:
     from dataclasses import dataclass, field
     PYDANTIC_AVAILABLE = False
 
+# 导入常量
+from .constants import DEFAULT_BATCH_SIZE, DEFAULT_MAX_RETRIES
+
 
 # 导入核心模块中的枚举定义，避免重复
 try:
@@ -70,14 +73,14 @@ if PYDANTIC_AVAILABLE:
         
         # 高级配置
         batch_size: int = Field(
-            default=200,
+            default=DEFAULT_BATCH_SIZE,
             description="消息批量获取大小",
             gt=0,
             le=1000
         )
-        
+
         max_retries: int = Field(
-            default=3,
+            default=DEFAULT_MAX_RETRIES,
             description="最大重试次数",
             ge=0,
             le=10
@@ -127,8 +130,8 @@ if PYDANTIC_AVAILABLE:
                 enable_message_id_validation=os.getenv(
                     'ENABLE_MESSAGE_ID_VALIDATION', 'true'
                 ).lower() == 'true',
-                batch_size=int(os.getenv('BATCH_SIZE', '200')),
-                max_retries=int(os.getenv('GROUPING_MAX_RETRIES', '3')),
+                batch_size=int(os.getenv('BATCH_SIZE', str(DEFAULT_BATCH_SIZE))),
+                max_retries=int(os.getenv('GROUPING_MAX_RETRIES', str(DEFAULT_MAX_RETRIES))),
                 enable_strategy_comparison=os.getenv(
                     'ENABLE_STRATEGY_COMPARISON', 'false'
                 ).lower() == 'true',
@@ -155,8 +158,8 @@ else:
         enable_message_id_validation: bool = True
         
         # 高级配置
-        batch_size: int = 200
-        max_retries: int = 3
+        batch_size: int = DEFAULT_BATCH_SIZE
+        max_retries: int = DEFAULT_MAX_RETRIES
         enable_strategy_comparison: bool = False
         auto_recommendation: bool = True
         

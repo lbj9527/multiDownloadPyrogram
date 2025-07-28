@@ -8,6 +8,9 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 from enum import Enum
 
+# 导入常量
+from config.constants import MB
+
 
 class FileType(Enum):
     """文件类型枚举"""
@@ -38,7 +41,7 @@ class MediaInfo:
     @property
     def file_size_mb(self) -> float:
         """文件大小（MB）"""
-        return (self.file_size / (1024 * 1024)) if self.file_size else 0.0
+        return (self.file_size / MB) if self.file_size else 0.0
     
     @property
     def is_media_group(self) -> bool:
@@ -76,7 +79,7 @@ class FileInfo:
     @property
     def file_size_mb(self) -> float:
         """文件大小（MB）"""
-        return self.file_size / (1024 * 1024)
+        return self.file_size / MB
     
     @property
     def file_extension(self) -> str:

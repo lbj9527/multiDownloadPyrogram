@@ -9,6 +9,7 @@ from pathlib import Path
 from pyrogram import Client
 
 from utils import get_logger
+from config.constants import STORAGE_MODES
 
 logger = get_logger(__name__)
 
@@ -201,6 +202,11 @@ class StorageStrategyFactory:
         Returns:
             对应的存储策略实例
         """
+        # 验证存储模式
+        if storage_mode not in STORAGE_MODES:
+            logger.warning(f"未知的存储模式: {storage_mode}，使用默认的raw模式")
+            storage_mode = "raw"
+
         if storage_mode == "upload":
             return UploadStorageStrategy(upload_coordinator)
         elif storage_mode == "hybrid":

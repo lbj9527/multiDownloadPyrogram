@@ -16,6 +16,16 @@ except ImportError:
     # 如果没有安装python-dotenv，给出提示
     print("⚠️ 建议安装 python-dotenv 以支持.env文件: pip install python-dotenv")
 
+# 导入常量
+from .constants import (
+    DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE, DEFAULT_CONCURRENT_CLIENTS,
+    DEFAULT_MAX_RETRIES, DEFAULT_UPLOAD_ENABLED, DEFAULT_UPLOAD_DELAY,
+    DEFAULT_PRESERVE_MEDIA_GROUPS, DEFAULT_PRESERVE_CAPTIONS, DEFAULT_BATCH_DELAY,
+    DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_FILE,
+    DEFAULT_LOG_FILE_ENABLED, DEFAULT_LOG_CONSOLE_ENABLED, DEFAULT_VERBOSE_PYROGRAM,
+    STORAGE_MODES
+)
+
 try:
     from pydantic import BaseModel, Field
     try:
@@ -91,20 +101,20 @@ if PYDANTIC_AVAILABLE:
         target_channel: str = Field(..., description="目标频道", min_length=1)
         start_message_id: int = Field(..., description="开始消息ID", gt=0)
         end_message_id: int = Field(..., description="结束消息ID", gt=0)
-        batch_size: int = Field(200, description="批次大小", ge=1, le=200)
-        max_concurrent_clients: int = Field(3, description="最大并发客户端数", ge=1, le=10)
+        batch_size: int = Field(DEFAULT_BATCH_SIZE, description="批次大小", ge=1, le=MAX_BATCH_SIZE)
+        max_concurrent_clients: int = Field(DEFAULT_CONCURRENT_CLIENTS, description="最大并发客户端数", ge=1, le=10)
         download_directory: str = Field("downloads", description="下载目录")
         session_directory: str = Field("sessions", description="会话文件目录")
-        batch_delay: float = Field(0.1, description="批次间延迟（秒）", ge=0.0, le=5.0)
+        batch_delay: float = Field(DEFAULT_BATCH_DELAY, description="批次间延迟（秒）", ge=0.0, le=5.0)
 
     class UploadConfig(ConfigBase):
         """上传配置"""
-        enabled: bool = Field(False, description="是否启用上传功能")
+        enabled: bool = Field(DEFAULT_UPLOAD_ENABLED, description="是否启用上传功能")
         target_channel: str = Field("", description="上传目标频道")
-        preserve_media_groups: bool = Field(True, description="保持媒体组格式")
-        preserve_captions: bool = Field(True, description="保持原始说明文字")
-        upload_delay: float = Field(1.0, description="上传间隔（秒）", ge=0.1, le=10.0)
-        max_retries: int = Field(3, description="最大重试次数", ge=1, le=10)
+        preserve_media_groups: bool = Field(DEFAULT_PRESERVE_MEDIA_GROUPS, description="保持媒体组格式")
+        preserve_captions: bool = Field(DEFAULT_PRESERVE_CAPTIONS, description="保持原始说明文字")
+        upload_delay: float = Field(DEFAULT_UPLOAD_DELAY, description="上传间隔（秒）", ge=0.1, le=10.0)
+        max_retries: int = Field(DEFAULT_MAX_RETRIES, description="最大重试次数", ge=1, le=10)
 
         def __post_init__(self):
             """后初始化验证"""
@@ -118,21 +128,21 @@ else:
         target_channel: str
         start_message_id: int
         end_message_id: int
-        batch_size: int = 200
-        max_concurrent_clients: int = 3
+        batch_size: int = DEFAULT_BATCH_SIZE
+        max_concurrent_clients: int = DEFAULT_CONCURRENT_CLIENTS
         download_directory: str = "downloads"
         session_directory: str = "sessions"
-        batch_delay: float = 0.1
+        batch_delay: float = DEFAULT_BATCH_DELAY
 
     @dataclass
     class UploadConfig:
         """上传配置"""
-        enabled: bool = False
+        enabled: bool = DEFAULT_UPLOAD_ENABLED
         target_channel: str = ""
-        preserve_media_groups: bool = True
-        preserve_captions: bool = True
-        upload_delay: float = 1.0
-        max_retries: int = 3
+        preserve_media_groups: bool = DEFAULT_PRESERVE_MEDIA_GROUPS
+        preserve_captions: bool = DEFAULT_PRESERVE_CAPTIONS
+        upload_delay: float = DEFAULT_UPLOAD_DELAY
+        max_retries: int = DEFAULT_MAX_RETRIES
     
     @property
     def total_messages(self) -> int:
@@ -149,8 +159,13 @@ if PYDANTIC_AVAILABLE:
         @classmethod
         def from_env(cls) -> 'StorageConfig':
             """从环境变量创建配置"""
+            # 验证存储模式
+            storage_mode = os.getenv("STORAGE_MODE", "upload")
+            if storage_mode not in STORAGE_MODES:
+                storage_mode = "upload"
+
             return cls(
-                storage_mode=os.getenv("STORAGE_MODE", "upload"),
+                storage_mode=storage_mode,
                 archive_after_days=int(os.getenv("ARCHIVE_AFTER_DAYS", "30")),
                 cleanup_after_days=int(os.getenv("CLEANUP_AFTER_DAYS", "90"))
             )
@@ -168,12 +183,12 @@ if PYDANTIC_AVAILABLE:
         def from_env(cls) -> 'LoggingConfig':
             """从环境变量创建配置"""
             return cls(
-                level=os.getenv("LOG_LEVEL", "INFO"),
-                format=os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s"),
-                file_enabled=os.getenv("LOG_FILE_ENABLED", "true").lower() == "true",
-                file_path=os.getenv("LOG_FILE_PATH", "logs/downloader.log"),
-                console_enabled=os.getenv("LOG_CONSOLE_ENABLED", "true").lower() == "true",
-                verbose_pyrogram=os.getenv("VERBOSE_PYROGRAM", "false").lower() == "true"
+                level=os.getenv("LOG_LEVEL", DEFAULT_LOG_LEVEL),
+                format=os.getenv("LOG_FORMAT", DEFAULT_LOG_FORMAT),
+                file_enabled=os.getenv("LOG_FILE_ENABLED", str(DEFAULT_LOG_FILE_ENABLED).lower()).lower() == "true",
+                file_path=os.getenv("LOG_FILE_PATH", DEFAULT_LOG_FILE),
+                console_enabled=os.getenv("LOG_CONSOLE_ENABLED", str(DEFAULT_LOG_CONSOLE_ENABLED).lower()).lower() == "true",
+                verbose_pyrogram=os.getenv("VERBOSE_PYROGRAM", str(DEFAULT_VERBOSE_PYROGRAM).lower()).lower() == "true"
             )
 else:
     @dataclass
@@ -186,8 +201,13 @@ else:
         @classmethod
         def from_env(cls) -> 'StorageConfig':
             """从环境变量创建配置"""
+            # 验证存储模式
+            storage_mode = os.getenv("STORAGE_MODE", "upload")
+            if storage_mode not in STORAGE_MODES:
+                storage_mode = "upload"
+
             return cls(
-                storage_mode=os.getenv("STORAGE_MODE", "upload"),
+                storage_mode=storage_mode,
                 archive_after_days=int(os.getenv("ARCHIVE_AFTER_DAYS", "30")),
                 cleanup_after_days=int(os.getenv("CLEANUP_AFTER_DAYS", "90"))
             )
@@ -235,20 +255,20 @@ class AppSettings:
             "target_channel": os.getenv("TARGET_CHANNEL", ""),  # 必须通过环境变量设置
             "start_message_id": int(os.getenv("START_MESSAGE_ID", "1")),  # 默认从消息1开始
             "end_message_id": int(os.getenv("END_MESSAGE_ID", "100")),  # 默认到消息100
-            "batch_size": int(os.getenv("BATCH_SIZE", "200")),
-            "max_concurrent_clients": int(os.getenv("MAX_CONCURRENT_CLIENTS", "3")),
+            "batch_size": int(os.getenv("BATCH_SIZE", str(DEFAULT_BATCH_SIZE))),
+            "max_concurrent_clients": int(os.getenv("MAX_CONCURRENT_CLIENTS", str(DEFAULT_CONCURRENT_CLIENTS))),
             "download_directory": os.getenv("DOWNLOAD_DIRECTORY", "downloads"),
             "session_directory": os.getenv("SESSION_DIRECTORY", "sessions"),
-            "batch_delay": float(os.getenv("DOWNLOAD_BATCH_DELAY", "0.1"))  # 批次间延迟
+            "batch_delay": float(os.getenv("DOWNLOAD_BATCH_DELAY", str(DEFAULT_BATCH_DELAY)))  # 批次间延迟
         }
 
         upload_data = {
-            "enabled": os.getenv("UPLOAD_ENABLED", "false").lower() == "true",  # 默认禁用
+            "enabled": os.getenv("UPLOAD_ENABLED", str(DEFAULT_UPLOAD_ENABLED).lower()).lower() == "true",  # 默认禁用
             "target_channel": os.getenv("UPLOAD_TARGET_CHANNEL", ""),  # 必须通过环境变量设置
-            "preserve_media_groups": os.getenv("PRESERVE_MEDIA_GROUPS", "true").lower() == "true",
-            "preserve_captions": os.getenv("PRESERVE_CAPTIONS", "true").lower() == "true",
-            "upload_delay": float(os.getenv("UPLOAD_DELAY", "1.5")),  # 默认1.5秒延迟
-            "max_retries": int(os.getenv("UPLOAD_MAX_RETRIES", "3"))
+            "preserve_media_groups": os.getenv("PRESERVE_MEDIA_GROUPS", str(DEFAULT_PRESERVE_MEDIA_GROUPS).lower()).lower() == "true",
+            "preserve_captions": os.getenv("PRESERVE_CAPTIONS", str(DEFAULT_PRESERVE_CAPTIONS).lower()).lower() == "true",
+            "upload_delay": float(os.getenv("UPLOAD_DELAY", str(DEFAULT_UPLOAD_DELAY))),  # 默认延迟
+            "max_retries": int(os.getenv("UPLOAD_MAX_RETRIES", str(DEFAULT_MAX_RETRIES)))
         }
 
         # 创建配置对象

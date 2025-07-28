@@ -7,15 +7,18 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from enum import Enum
 
+# 导入常量
+from config.constants import CLIENT_STATUS
+
 
 class ClientStatus(Enum):
     """客户端状态枚举"""
-    IDLE = "idle"
-    CONNECTING = "connecting"
-    CONNECTED = "connected"
-    DOWNLOADING = "downloading"
-    ERROR = "error"
-    DISCONNECTED = "disconnected"
+    IDLE = CLIENT_STATUS['IDLE']
+    CONNECTING = CLIENT_STATUS['CONNECTING']
+    CONNECTED = CLIENT_STATUS['CONNECTED']
+    DOWNLOADING = CLIENT_STATUS['DOWNLOADING']
+    ERROR = CLIENT_STATUS['ERROR']
+    DISCONNECTED = CLIENT_STATUS['DISCONNECTED']
 
 
 @dataclass
