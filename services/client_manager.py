@@ -11,6 +11,7 @@ from pyrogram.client import Client
 from models import ClientInfo, ClientStatus
 from config import app_settings
 from utils import get_logger, retry_async
+from config.constants import DEFAULT_SESSION_DIRECTORY
 
 logger = get_logger(__name__)
 
@@ -82,7 +83,7 @@ class ClientManager:
             "name": session_file,
             "api_id": self.telegram_config.api_id,
             "api_hash": self.telegram_config.api_hash,
-            "workdir": "sessions",
+            "workdir": DEFAULT_SESSION_DIRECTORY,
             "workers": 4,
             "max_concurrent_transmissions": 2,  # 设置最大并发传输数为2
             "sleep_threshold": 10

@@ -139,6 +139,14 @@ DEFAULT_BATCH_DELAY = 0.1
 DEFAULT_WORKERS = 4
 DEFAULT_SLEEP_THRESHOLD = 10
 
+# 会话文件名称常量
+DEFAULT_SESSION_NAMES = [
+    "client_session_1",
+    "client_session_2",
+    "client_session_3"
+]
+DEFAULT_SESSION_DIRECTORY = "sessions"
+
 # 日志相关常量
 LOG_LEVELS: Set[str] = {'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'}
 DEFAULT_LOG_LEVEL = "INFO"

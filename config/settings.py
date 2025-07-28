@@ -23,7 +23,7 @@ from .constants import (
     DEFAULT_PRESERVE_MEDIA_GROUPS, DEFAULT_PRESERVE_CAPTIONS, DEFAULT_BATCH_DELAY,
     DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_FILE,
     DEFAULT_LOG_FILE_ENABLED, DEFAULT_LOG_CONSOLE_ENABLED, DEFAULT_VERBOSE_PYROGRAM,
-    STORAGE_MODES
+    STORAGE_MODES, DEFAULT_SESSION_NAMES, DEFAULT_SESSION_DIRECTORY
 )
 
 try:
@@ -104,7 +104,7 @@ if PYDANTIC_AVAILABLE:
         batch_size: int = Field(DEFAULT_BATCH_SIZE, description="批次大小", ge=1, le=MAX_BATCH_SIZE)
         max_concurrent_clients: int = Field(DEFAULT_CONCURRENT_CLIENTS, description="最大并发客户端数", ge=1, le=10)
         download_directory: str = Field("downloads", description="下载目录")
-        session_directory: str = Field("sessions", description="会话文件目录")
+        session_directory: str = Field(DEFAULT_SESSION_DIRECTORY, description="会话文件目录")
         batch_delay: float = Field(DEFAULT_BATCH_DELAY, description="批次间延迟（秒）", ge=0.0, le=5.0)
 
     class UploadConfig(ConfigBase):
@@ -131,7 +131,7 @@ else:
         batch_size: int = DEFAULT_BATCH_SIZE
         max_concurrent_clients: int = DEFAULT_CONCURRENT_CLIENTS
         download_directory: str = "downloads"
-        session_directory: str = "sessions"
+        session_directory: str = DEFAULT_SESSION_DIRECTORY
         batch_delay: float = DEFAULT_BATCH_DELAY
 
     @dataclass
@@ -258,7 +258,7 @@ class AppSettings:
             "batch_size": int(os.getenv("BATCH_SIZE", str(DEFAULT_BATCH_SIZE))),
             "max_concurrent_clients": int(os.getenv("MAX_CONCURRENT_CLIENTS", str(DEFAULT_CONCURRENT_CLIENTS))),
             "download_directory": os.getenv("DOWNLOAD_DIRECTORY", "downloads"),
-            "session_directory": os.getenv("SESSION_DIRECTORY", "sessions"),
+            "session_directory": os.getenv("SESSION_DIRECTORY", DEFAULT_SESSION_DIRECTORY),
             "batch_delay": float(os.getenv("DOWNLOAD_BATCH_DELAY", str(DEFAULT_BATCH_DELAY)))  # 批次间延迟
         }
 
@@ -298,14 +298,8 @@ class AppSettings:
     
     def get_session_files(self) -> List[str]:
         """获取会话文件列表"""
-        session_names = [
-            "client_session_1",
-            "client_session_2",
-            "client_session_3"
-        ]
-
         session_files = []
-        for session_name in session_names[:self.download.max_concurrent_clients]:
+        for session_name in DEFAULT_SESSION_NAMES[:self.download.max_concurrent_clients]:
             session_files.append(session_name)
 
         return session_files
