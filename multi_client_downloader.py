@@ -411,11 +411,11 @@ class MultiClientDownloader:
         self.stats["start_time"] = time.time()
         
         try:
-            # 修改为顺序启动客户端任务，每个客户端之间延时3秒
+            # 修改为顺序启动客户端任务，每个客户端之间延时0.1秒
             async def client_task(client, message_range, index):
-                # 添加启动延时：第一个客户端立即启动，后续客户端每个延时3秒
+                # 添加启动延时：第一个客户端立即启动，后续客户端每个延时0.1秒
                 if index > 0:
-                    delay_seconds = index * 3
+                    delay_seconds = index * 0.1
                     logger.info(f"客户端{index + 1} 将在 {delay_seconds} 秒后启动...")
                     await asyncio.sleep(delay_seconds)
 

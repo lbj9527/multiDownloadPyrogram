@@ -19,15 +19,42 @@ import logging
 import psutil
 import threading
 
-# 配置日志 - 避免重复配置
+# 配置日志 - 强制清除并重新配置
 def setup_logging(verbose: bool = True):
     """配置日志系统"""
+    # 确保logs目录存在
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+    log_file = logs_dir / "test_downloader.log"
+
+    # 强制清除之前的日志文件
+    if log_file.exists():
+        log_file.unlink()
+
+    # 清除所有现有的日志处理器
     root_logger = logging.getLogger()
-    if not root_logger.handlers:
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # 创建格式化器
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # 配置文件处理器
+    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+
+    # 配置控制台处理器
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+
+    # 配置根日志记录器
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+
+    # 配置Pyrogram日志级别
     if verbose:
         logging.getLogger("pyrogram").setLevel(logging.INFO)
     else:
@@ -451,9 +478,16 @@ async def main():
         logger.error(f"程序执行失败: {e}")
 
 if __name__ == "__main__":
+    # 显示日志文件位置
+    logs_dir = Path("logs")
+    log_file = logs_dir / "test_downloader.log"
+    logger.info(f"📝 日志文件位置: {log_file.absolute()}")
+    logger.info("🗑️ 日志文件已清除，开始新的日志记录")
+
     try:
         import tgcrypto
         logger.info("✅ TgCrypto 已启用，加密操作将被加速")
     except ImportError:
         logger.warning("⚠️ TgCrypto 未安装，建议安装以提升性能: pip install tgcrypto")
+
     asyncio.run(main())
