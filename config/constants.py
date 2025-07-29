@@ -10,7 +10,7 @@ DEFAULT_BATCH_SIZE = 200
 MAX_BATCH_SIZE = 200  # Pyrogram官方限制
 MIN_BATCH_SIZE = 1
 MAX_CONCURRENT_DOWNLOADS = 10
-DEFAULT_CONCURRENT_CLIENTS = 3
+# 注意：并发客户端数量现在完全通过环境变量 MAX_CONCURRENT_CLIENTS 控制
 
 # 文件大小常量 (字节)
 MB = 1024 * 1024
@@ -139,11 +139,18 @@ DEFAULT_BATCH_DELAY = 0.1
 DEFAULT_WORKERS = 4
 DEFAULT_SLEEP_THRESHOLD = 10
 
-# 会话文件名称常量
+# 会话文件名称常量（支持最多10个客户端）
 DEFAULT_SESSION_NAMES = [
     "client_session_1",
     "client_session_2",
-    "client_session_3"
+    "client_session_3",
+    "client_session_4",
+    "client_session_5",
+    "client_session_6",
+    "client_session_7",
+    "client_session_8",
+    "client_session_9",
+    "client_session_10"
 ]
 DEFAULT_SESSION_DIRECTORY = "sessions"
 

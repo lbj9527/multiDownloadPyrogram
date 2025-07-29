@@ -18,7 +18,7 @@ except ImportError:
 
 # 导入常量
 from .constants import (
-    DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE, DEFAULT_CONCURRENT_CLIENTS,
+    DEFAULT_BATCH_SIZE, MAX_BATCH_SIZE,
     DEFAULT_MAX_RETRIES, DEFAULT_UPLOAD_ENABLED, DEFAULT_UPLOAD_DELAY,
     DEFAULT_PRESERVE_MEDIA_GROUPS, DEFAULT_PRESERVE_CAPTIONS, DEFAULT_BATCH_DELAY,
     DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT, DEFAULT_LOG_FILE,
@@ -102,7 +102,7 @@ if PYDANTIC_AVAILABLE:
         start_message_id: int = Field(..., description="开始消息ID", gt=0)
         end_message_id: int = Field(..., description="结束消息ID", gt=0)
         batch_size: int = Field(DEFAULT_BATCH_SIZE, description="批次大小", ge=1, le=MAX_BATCH_SIZE)
-        max_concurrent_clients: int = Field(DEFAULT_CONCURRENT_CLIENTS, description="最大并发客户端数", ge=1, le=10)
+        max_concurrent_clients: int = Field(3, description="最大并发客户端数", ge=1, le=10)
         download_directory: str = Field("downloads", description="下载目录")
         session_directory: str = Field(DEFAULT_SESSION_DIRECTORY, description="会话文件目录")
         batch_delay: float = Field(DEFAULT_BATCH_DELAY, description="批次间延迟（秒）", ge=0.0, le=5.0)
@@ -129,7 +129,7 @@ else:
         start_message_id: int
         end_message_id: int
         batch_size: int = DEFAULT_BATCH_SIZE
-        max_concurrent_clients: int = DEFAULT_CONCURRENT_CLIENTS
+        max_concurrent_clients: int = 3
         download_directory: str = "downloads"
         session_directory: str = DEFAULT_SESSION_DIRECTORY
         batch_delay: float = DEFAULT_BATCH_DELAY
@@ -256,7 +256,7 @@ class AppSettings:
             "start_message_id": int(os.getenv("START_MESSAGE_ID", "1")),  # 默认从消息1开始
             "end_message_id": int(os.getenv("END_MESSAGE_ID", "100")),  # 默认到消息100
             "batch_size": int(os.getenv("BATCH_SIZE", str(DEFAULT_BATCH_SIZE))),
-            "max_concurrent_clients": int(os.getenv("MAX_CONCURRENT_CLIENTS", str(DEFAULT_CONCURRENT_CLIENTS))),
+            "max_concurrent_clients": int(os.getenv("MAX_CONCURRENT_CLIENTS", "3")),
             "download_directory": os.getenv("DOWNLOAD_DIRECTORY", "downloads"),
             "session_directory": os.getenv("SESSION_DIRECTORY", DEFAULT_SESSION_DIRECTORY),
             "batch_delay": float(os.getenv("DOWNLOAD_BATCH_DELAY", str(DEFAULT_BATCH_DELAY)))  # 批次间延迟
