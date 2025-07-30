@@ -49,9 +49,11 @@ class MessageValidator:
 
                 for j, message in enumerate(messages):
                     original_id = batch_ids[j]
-                    if message is not None:
+                    if message is not None and _has_media_comprehensive(message):
+                        # 只有包含媒体内容的消息才被认为是有效的
                         valid_ids.append(original_id)
                     else:
+                        # 纯文本消息或不存在的消息都被认为是无效的
                         invalid_ids.append(original_id)
 
             except Exception as e:
@@ -595,8 +597,8 @@ def estimate_file_size(message) -> int:
 
 def create_message_info_from_pyrogram_message(message) -> MessageInfo:
     """从Pyrogram消息对象创建MessageInfo（增强版）"""
-    # 检查是否有媒体
-    has_media = hasattr(message, 'media') and message.media
+    # 检查是否有媒体 - 使用更全面的检查逻辑
+    has_media = _has_media_comprehensive(message)
 
     # 获取精确的文件大小
     file_size = estimate_file_size(message)
@@ -612,6 +614,36 @@ def create_message_info_from_pyrogram_message(message) -> MessageInfo:
         file_size=file_size,
         has_media=has_media
     )
+
+
+def _has_media_comprehensive(message) -> bool:
+    """
+    全面检查消息是否包含媒体内容
+
+    Args:
+        message: Pyrogram消息对象
+
+    Returns:
+        是否包含媒体
+    """
+    if not message:
+        return False
+
+    # 检查通用media属性
+    if hasattr(message, 'media') and message.media:
+        return True
+
+    # 检查具体的媒体类型
+    SUPPORTED_MEDIA_TYPES = [
+        'document', 'video', 'photo', 'audio',
+        'voice', 'video_note', 'animation', 'sticker'
+    ]
+
+    for media_type in SUPPORTED_MEDIA_TYPES:
+        if hasattr(message, media_type) and getattr(message, media_type):
+            return True
+
+    return False
 
 
 def convert_messages_to_message_info(messages: List) -> List[MessageInfo]:
