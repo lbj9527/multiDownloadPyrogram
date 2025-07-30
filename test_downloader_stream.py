@@ -10,12 +10,21 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from pyrogram.client import Client
 from pyrogram.errors import FloodWait
 import logging
 import psutil
 import threading
+
+# 导入智能消息分配器
+from message_distributor import (
+    MessageDistributor,
+    DistributionConfig,
+    DistributionMode,
+    LoadBalanceMetric,
+    convert_messages_to_message_info
+)
 
 # 配置日志 - 强制清除并重新配置
 def setup_logging(verbose: bool = True):
@@ -69,9 +78,9 @@ logger = logging.getLogger(__name__)
 API_ID = 25098445
 API_HASH = "cc2fa5a762621d306d8de030614e4555"
 PHONE_NUMBER = "+8618758361347"
-TARGET_CHANNEL = "@zbzwx"
-START_MESSAGE_ID = 37788
-END_MESSAGE_ID = 37794
+TARGET_CHANNEL = "@csdkl"
+START_MESSAGE_ID = 72710
+END_MESSAGE_ID = 72849
 TOTAL_MESSAGES = END_MESSAGE_ID - START_MESSAGE_ID + 1
 SESSION_NAMES = [
     "client_8618758361347_1",
@@ -98,7 +107,7 @@ def monitor_bandwidth():
         old_stats = new_stats
 
 class MultiClientDownloader:
-    """多客户端下载管理器 - Stream Media 版本"""
+    """多客户端下载管理器 - Stream Media 版本 + 智能消息分配"""
     def __init__(self):
         self.clients: List[Client] = []
         self.download_dir = DOWNLOAD_DIR
@@ -111,7 +120,44 @@ class MultiClientDownloader:
             "failed": 0,
             "start_time": None
         }
-    
+
+        # 初始化智能消息分配器（完整配置，与main.py程序保持一致）
+        self.distribution_config = DistributionConfig(
+            mode=DistributionMode.MEDIA_GROUP_AWARE,  # 使用媒体组感知分配
+            load_balance_metric=LoadBalanceMetric.FILE_COUNT,  # 按文件数量均衡
+            max_imbalance_ratio=0.3,  # 最大不均衡比例30%
+            prefer_large_groups_first=True,  # 优先分配大媒体组
+            enable_validation=True,  # 启用基本验证
+            enable_message_id_validation=True,  # 启用消息ID验证
+            custom_weights={},  # 自定义权重（可扩展）
+            client_preferences={}  # 客户端偏好（可扩展）
+        )
+        self.message_distributor = MessageDistributor(self.distribution_config)
+
+        # 显示分配策略信息
+        self._log_distribution_strategy_info()
+
+    def _log_distribution_strategy_info(self):
+        """显示分配策略信息"""
+        try:
+            # 获取当前策略信息
+            strategy_class = self.message_distributor._strategies.get(self.distribution_config.mode)
+            if strategy_class:
+                strategy = strategy_class(self.distribution_config)
+                strategy_info = strategy.get_strategy_info()
+
+                logger.info("🎯 智能消息分配策略信息:")
+                logger.info(f"  策略名称: {strategy_info['name']}")
+                logger.info(f"  策略描述: {strategy_info['description']}")
+                logger.info("  主要特性:")
+                for feature in strategy_info['features']:
+                    logger.info(f"    ✓ {feature}")
+                logger.info("  配置参数:")
+                for key, value in strategy_info['config'].items():
+                    logger.info(f"    {key}: {value}")
+        except Exception as e:
+            logger.warning(f"获取策略信息失败: {e}")
+
     def create_clients(self) -> List[Client]:
         """创建客户端实例"""
         clients = []
@@ -260,7 +306,7 @@ class MultiClientDownloader:
             logger.error(f"保存文本消息失败: {e}")
 
     def calculate_message_ranges(self) -> List[Tuple[int, int]]:
-        """计算消息范围分片"""
+        """计算消息范围分片（简单模式，保留向后兼容）"""
         client_count = len(SESSION_NAMES)
         messages_per_client = TOTAL_MESSAGES // client_count
         remainder = TOTAL_MESSAGES % client_count
@@ -274,6 +320,88 @@ class MultiClientDownloader:
             logger.info(f"客户端 {i+1} 分配范围: {current_start} - {current_end} ({messages_for_this_client} 条消息)")
             current_start = current_end + 1
         return ranges
+
+    async def smart_distribute_messages(self, client: Client) -> Tuple[Dict[str, List[int]], Dict[str, Any]]:
+        """
+        智能消息分配 - 使用媒体组感知算法 + 消息验证
+
+        Returns:
+            Tuple[Dict[client_name, List[message_ids]], validation_stats] - 分配结果和验证统计
+        """
+        logger.info("🧠 开始智能消息分配（带验证）...")
+
+        try:
+            # 1. 批量获取所有消息对象
+            logger.info(f"📦 获取消息范围 {START_MESSAGE_ID}-{END_MESSAGE_ID} 的消息对象...")
+            all_message_ids = list(range(START_MESSAGE_ID, END_MESSAGE_ID + 1))
+
+            # 分批获取消息以避免超时
+            batch_size = 100
+            all_messages = []
+
+            for i in range(0, len(all_message_ids), batch_size):
+                batch_ids = all_message_ids[i:i + batch_size]
+                try:
+                    messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
+                    all_messages.extend(messages)
+                    logger.info(f"已获取 {len(all_messages)}/{len(all_message_ids)} 条消息")
+                except Exception as e:
+                    logger.warning(f"获取消息批次 {batch_ids[0]}-{batch_ids[-1]} 失败: {e}")
+                    continue
+
+            # 2. 转换为MessageInfo对象
+            logger.info("🔄 转换消息对象...")
+            message_infos = convert_messages_to_message_info(all_messages)
+            logger.info(f"成功转换 {len(message_infos)} 条消息")
+
+            # 3. 执行智能分配（带验证）
+            logger.info("⚖️ 执行智能分配（带消息验证）...")
+            distribution_result, validation_stats = await self.message_distributor.distribute_messages_with_validation(
+                messages=message_infos,
+                client_names=SESSION_NAMES,
+                client=client,
+                channel=TARGET_CHANNEL
+            )
+
+            # 4. 转换为客户端消息ID映射
+            client_message_mapping = {}
+            for assignment in distribution_result.client_assignments:
+                client_message_mapping[assignment.client_name] = assignment.all_message_ids
+
+            # 5. 记录验证统计
+            if validation_stats.get("enabled"):
+                logger.info("📊 消息验证统计:")
+                logger.info(f"  原始消息数: {validation_stats['original_count']}")
+                logger.info(f"  有效消息数: {validation_stats['valid_count']}")
+                logger.info(f"  无效消息数: {validation_stats['invalid_count']}")
+                logger.info(f"  验证通过率: {validation_stats['validation_rate']:.1%}")
+
+                if validation_stats['invalid_count'] > 0:
+                    invalid_sample = validation_stats['invalid_ids'][:5]
+                    logger.warning(f"  无效消息ID示例: {invalid_sample}{'...' if len(validation_stats['invalid_ids']) > 5 else ''}")
+
+            logger.info("✅ 智能消息分配完成")
+            return client_message_mapping, validation_stats
+
+        except Exception as e:
+            logger.error(f"❌ 智能消息分配失败: {e}")
+            logger.info("🔄 回退到简单范围分配...")
+
+            # 回退到简单范围分配
+            ranges = self.calculate_message_ranges()
+            client_message_mapping = {}
+            for i, (start_id, end_id) in enumerate(ranges):
+                client_name = SESSION_NAMES[i]
+                message_ids = list(range(start_id, end_id + 1))
+                client_message_mapping[client_name] = message_ids
+
+            fallback_stats = {
+                "enabled": False,
+                "fallback": True,
+                "reason": str(e)
+            }
+
+            return client_message_mapping, fallback_stats
 
     async def download_media_file(self, client: Client, message) -> Optional[Path]:
         """使用 stream_media 方法下载媒体文件"""
@@ -335,9 +463,25 @@ class MultiClientDownloader:
             return None
 
     async def download_messages_range(self, client: Client, start_id: int, end_id: int, client_index: int) -> Dict:
-        """下载指定范围的消息"""
+        """下载指定范围的消息（兼容模式）"""
+        message_ids = list(range(start_id, end_id + 1))
+        return await self.download_messages_by_ids(client, message_ids, client_index)
+
+    async def download_messages_by_ids(self, client: Client, message_ids: List[int], client_index: int) -> Dict:
+        """根据消息ID列表下载消息"""
         client_name = f"客户端{client_index + 1}"
-        logger.info(f"{client_name} 开始下载消息范围: {start_id} - {end_id}")
+
+        if not message_ids:
+            logger.warning(f"{client_name} 没有分配到消息")
+            return {
+                "client": client_name,
+                "downloaded": 0,
+                "failed": 0,
+                "range": "empty"
+            }
+
+        min_id, max_id = min(message_ids), max(message_ids)
+        logger.info(f"{client_name} 开始下载 {len(message_ids)} 条消息 (ID范围: {min_id}-{max_id})")
 
         if not self.channel_info:
             self.channel_info = await self.get_channel_info(client)
@@ -347,7 +491,6 @@ class MultiClientDownloader:
         failed = 0
 
         try:
-            message_ids = list(range(start_id, end_id + 1))
             batch_size = 50
 
             for i in range(0, len(message_ids), batch_size):
@@ -392,7 +535,7 @@ class MultiClientDownloader:
 
                     # 更新统计信息
                     self.stats["downloaded"] += len([m for m in messages if m])
-                    progress = (downloaded + failed) / (end_id - start_id + 1) * 100
+                    progress = (downloaded + failed) / len(message_ids) * 100
                     logger.info(f"{client_name} 进度: {progress:.1f}% ({downloaded} 成功, {failed} 失败)")
 
                 except FloodWait as e:
@@ -414,21 +557,47 @@ class MultiClientDownloader:
             "client": client_name,
             "downloaded": downloaded,
             "failed": failed,
-            "range": f"{start_id}-{end_id}"
+            "range": f"{min_id}-{max_id}",
+            "total_messages": len(message_ids)
         }
 
     async def run_download(self):
-        """运行下载任务"""
-        logger.info("🚀 开始多客户端消息下载验证 - Stream Media 版本")
+        """运行下载任务 - 支持智能分配和简单分配"""
+        logger.info("🚀 开始多客户端消息下载验证 - Stream Media 版本 + 智能分配")
         logger.info(f"目标频道: {TARGET_CHANNEL}")
         logger.info(f"消息范围: {START_MESSAGE_ID} - {END_MESSAGE_ID} (共 {TOTAL_MESSAGES} 条)")
 
         clients = self.create_clients()
-        message_ranges = self.calculate_message_ranges()
         self.stats["start_time"] = time.time()
 
         try:
-            async def client_task(client, message_range, index):
+            # 尝试使用智能分配
+            use_smart_distribution = True
+            client_message_mapping = None
+            validation_stats = None
+
+            if use_smart_distribution:
+                try:
+                    # 使用第一个客户端进行消息分析
+                    first_client = clients[0]
+                    async with first_client:
+                        client_message_mapping, validation_stats = await self.smart_distribute_messages(first_client)
+                    logger.info("✅ 使用智能消息分配")
+                except Exception as e:
+                    logger.warning(f"智能分配失败，回退到简单分配: {e}")
+                    use_smart_distribution = False
+
+            if not use_smart_distribution or not client_message_mapping:
+                # 回退到简单范围分配
+                logger.info("🔄 使用简单范围分配")
+                message_ranges = self.calculate_message_ranges()
+                client_message_mapping = {}
+                for i, (start_id, end_id) in enumerate(message_ranges):
+                    session_name = SESSION_NAMES[i]
+                    message_ids = list(range(start_id, end_id + 1))
+                    client_message_mapping[session_name] = message_ids
+
+            async def client_task(client, client_name, message_ids, index):
                 # 错开启动时间，避免同时连接
                 if index > 0:
                     delay_seconds = index * 0.5
@@ -437,24 +606,24 @@ class MultiClientDownloader:
 
                 logger.info(f"客户端{index + 1} 正在启动...")
                 async with client:
-                    return await self.download_messages_range(
-                        client, message_range[0], message_range[1], index
-                    )
+                    return await self.download_messages_by_ids(client, message_ids, index)
 
             # 创建并发任务
-            tasks = [
-                client_task(clients[i], message_ranges[i], i)
-                for i in range(len(clients))
-            ]
+            tasks = []
+            for i, client in enumerate(clients):
+                client_name = SESSION_NAMES[i]
+                message_ids = client_message_mapping.get(client_name, [])
+                task = client_task(client, client_name, message_ids, i)
+                tasks.append(task)
 
             # 等待所有任务完成
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            await self.process_results(results)
+            await self.process_results(results, validation_stats)
 
         except Exception as e:
             logger.error(f"下载任务执行失败: {e}")
 
-    async def process_results(self, results):
+    async def process_results(self, results, validation_stats=None):
         """处理下载结果"""
         total_downloaded = 0
         total_failed = 0
@@ -470,18 +639,36 @@ class MultiClientDownloader:
 
         # 输出详细统计信息
         logger.info("\n" + "="*60)
-        logger.info("📊 Stream Media 下载结果统计")
+        logger.info("📊 Stream Media + 智能分配 下载结果统计")
         logger.info("="*60)
 
+        # 显示验证统计（如果有）
+        if validation_stats and validation_stats.get("enabled"):
+            logger.info("🔍 消息验证统计:")
+            logger.info(f"  原始消息数: {validation_stats['original_count']}")
+            logger.info(f"  有效消息数: {validation_stats['valid_count']}")
+            logger.info(f"  无效消息数: {validation_stats['invalid_count']}")
+            logger.info(f"  验证通过率: {validation_stats['validation_rate']:.1%}")
+            logger.info("-" * 60)
+        elif validation_stats and validation_stats.get("fallback"):
+            logger.info("⚠️ 使用简单分配模式（智能分配失败）")
+            logger.info(f"  失败原因: {validation_stats.get('reason', '未知')}")
+            logger.info("-" * 60)
+
         for result in client_results:
-            logger.info(f"{result['client']}: {result['downloaded']} 成功, {result['failed']} 失败 (范围: {result['range']})")
+            range_info = result.get('range', 'unknown')
+            total_msgs = result.get('total_messages', 'unknown')
+            logger.info(f"{result['client']}: {result['downloaded']} 成功, {result['failed']} 失败 (范围: {range_info}, 总数: {total_msgs})")
 
         elapsed_time = time.time() - self.stats["start_time"]
-        success_rate = (total_downloaded / TOTAL_MESSAGES * 100) if TOTAL_MESSAGES > 0 else 0
+
+        # 计算成功率（基于实际分配的消息数）
+        actual_total = validation_stats.get('valid_count', TOTAL_MESSAGES) if validation_stats and validation_stats.get('enabled') else TOTAL_MESSAGES
+        success_rate = (total_downloaded / actual_total * 100) if actual_total > 0 else 0
 
         logger.info("-" * 60)
         logger.info(f"总计: {total_downloaded} 成功, {total_failed} 失败")
-        logger.info(f"成功率: {success_rate:.1f}%")
+        logger.info(f"成功率: {success_rate:.1f}% (基于有效消息)")
         logger.info(f"耗时: {elapsed_time:.1f} 秒")
 
         if elapsed_time > 0:
