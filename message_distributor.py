@@ -85,7 +85,6 @@ class LoadBalanceMetric(Enum):
 class DistributionMode(Enum):
     """分配模式"""
     MEDIA_GROUP_AWARE = "media_group_aware"  # 媒体组感知分配
-    SIMPLE_RANGE = "simple_range"            # 简单范围分配
 
 
 @dataclass
@@ -380,80 +379,7 @@ class MediaGroupAwareStrategy(MessageDistributionStrategy):
         }
 
 
-class SimpleRangeStrategy(MessageDistributionStrategy):
-    """简单范围分配策略"""
-    
-    def distribute(
-        self, 
-        messages: List[MessageInfo], 
-        client_names: List[str]
-    ) -> DistributionResult:
-        """简单的消息ID范围分配"""
-        
-        # 验证输入
-        errors = self.validate_inputs(messages, client_names)
-        if errors:
-            raise ValueError(f"输入验证失败: {errors}")
-        
-        # 按消息ID排序
-        sorted_messages = sorted(messages, key=lambda m: m.message_id)
-        
-        # 计算每个客户端的消息数量
-        total_messages = len(sorted_messages)
-        client_count = len(client_names)
-        messages_per_client = total_messages // client_count
-        remainder = total_messages % client_count
-        
-        # 分配消息
-        client_assignments = []
-        start_idx = 0
-        
-        for i, client_name in enumerate(client_names):
-            # 前remainder个客户端多分配1条消息
-            current_count = messages_per_client + (1 if i < remainder else 0)
-            end_idx = start_idx + current_count
-            
-            # 获取该客户端的消息
-            client_messages = sorted_messages[start_idx:end_idx]
-            
-            # 创建单个消息组
-            message_group = MessageGroup(
-                group_id=f"range_{client_name}",
-                messages=client_messages,
-                is_media_group=False
-            )
-            
-            assignment = ClientAssignment(
-                client_name=client_name,
-                message_groups=[message_group]
-            )
-            
-            client_assignments.append(assignment)
-            start_idx = end_idx
-        
-        result = DistributionResult(
-            client_assignments=client_assignments,
-            distribution_strategy="SimpleRangeStrategy"
-        )
 
-        return result
-
-    def get_strategy_info(self) -> Dict[str, Any]:
-        """获取策略信息"""
-        return {
-            "name": "SimpleRangeStrategy",
-            "description": "简单的消息ID范围分配策略",
-            "features": [
-                "按消息ID顺序分配",
-                "简单均匀分布",
-                "向后兼容性",
-                "快速分配"
-            ],
-            "config": {
-                "mode": self.config.mode.value,
-                "load_balance_metric": self.config.load_balance_metric.value
-            }
-        }
 
 
 class MessageDistributor:
@@ -462,21 +388,9 @@ class MessageDistributor:
     def __init__(self, config: Optional[DistributionConfig] = None):
         self.config = config or DistributionConfig()
         self._strategies = {
-            DistributionMode.MEDIA_GROUP_AWARE: MediaGroupAwareStrategy,
-            DistributionMode.SIMPLE_RANGE: SimpleRangeStrategy
+            DistributionMode.MEDIA_GROUP_AWARE: MediaGroupAwareStrategy
         }
         self.validator = MessageValidator()
-
-    def distribute_messages(
-        self,
-        messages: List[MessageInfo],
-        client_names: List[str],
-        strategy_mode: Optional[DistributionMode] = None
-    ) -> DistributionResult:
-        """
-        分配消息到多个客户端（同步版本，不进行消息验证）
-        """
-        return self._distribute_messages_internal(messages, client_names, strategy_mode)
 
     async def distribute_messages_with_validation(
         self,
