@@ -1,6 +1,7 @@
 """
-三客户端消息下载验证程序
-核心功能：消息范围分片、异步任务管理、TgCrypto加速
+三客户端消息下载验证程序 - Stream Media 版本
+核心功能：消息范围分片、异步任务管理、TgCrypto加速、流式下载
+使用 Pyrogram 的 stream_media 方法进行高效流式下载
 
 注意：此文件使用硬编码配置，请在配置区域修改相关参数
 """
@@ -12,9 +13,6 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 from pyrogram.client import Client
 from pyrogram.errors import FloodWait
-from pyrogram.raw.functions.upload import GetFile
-from pyrogram.raw.types import InputDocumentFileLocation, InputPhotoFileLocation
-from pyrogram.file_id import FileId, FileType
 import logging
 import psutil
 import threading
@@ -25,7 +23,7 @@ def setup_logging(verbose: bool = True):
     # 确保logs目录存在
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
-    log_file = logs_dir / "test_downloader.log"
+    log_file = logs_dir / "test_downloader_stream.log"
 
     # 强制清除之前的日志文件
     if log_file.exists():
@@ -100,7 +98,7 @@ def monitor_bandwidth():
         old_stats = new_stats
 
 class MultiClientDownloader:
-    """多客户端下载管理器"""
+    """多客户端下载管理器 - Stream Media 版本"""
     def __init__(self):
         self.clients: List[Client] = []
         self.download_dir = DOWNLOAD_DIR
@@ -278,104 +276,102 @@ class MultiClientDownloader:
         return ranges
 
     async def download_media_file(self, client: Client, message) -> Optional[Path]:
+        """使用 stream_media 方法下载媒体文件"""
         try:
             channel_dir = self.get_channel_directory()
             file_name = self.generate_filename_by_type(message)
             file_path = channel_dir / file_name
+
+            # 获取文件大小信息
             file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
                         getattr(getattr(message, 'video', None), 'file_size', 0) or \
                         getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
-            logger.info(f"下载消息 {message.id} (大小: {file_size / 1024 / 1024:.2f} MB)")
 
-            # 获取媒体对象
+            logger.info(f"开始流式下载消息 {message.id} (大小: {file_size / 1024 / 1024:.2f} MB)")
+
+            # 检查是否有有效媒体
             media = (message.document or message.video or message.photo or message.audio or
                      message.voice or message.video_note or message.animation or message.sticker)
             if not media:
                 logger.error(f"消息 {message.id} 无有效媒体")
                 return None
 
-            # 解码 file_id 获取文件位置
-            file_id_str = media.file_id
-            file_id_obj = FileId.decode(file_id_str)
-            logger.info(f"消息 {message.id} 媒体类型: {FileType(file_id_obj.file_type).name}")
-
-            # 构造文件位置
-            if file_id_obj.file_type == FileType.PHOTO:
-                location = InputPhotoFileLocation(
-                    id=file_id_obj.media_id,
-                    access_hash=file_id_obj.access_hash,
-                    file_reference=file_id_obj.file_reference,
-                    thumb_size=file_id_obj.thumbnail_size or ''
-                )
-            else:
-                location = InputDocumentFileLocation(
-                    id=file_id_obj.media_id,
-                    access_hash=file_id_obj.access_hash,
-                    file_reference=file_id_obj.file_reference,
-                    thumb_size=file_id_obj.thumbnail_size or ''
-                )
-
-            # 分片下载
-            offset = 0
-            chunk_size = 1024 * 1024  # 1MB，Telegram API 最大值
+            # 使用 stream_media 进行流式下载
             try:
+                downloaded_bytes = 0
                 with open(file_path, 'wb') as f:
-                    while offset < file_size or file_size == 0:
-                        try:
-                            result = await client.invoke(GetFile(
-                                location=location,
-                                offset=offset,
-                                limit=chunk_size
-                            ))
-                            if not hasattr(result, 'bytes') or not result.bytes:
-                                break
-                            f.write(result.bytes)
-                            offset += len(result.bytes)
-                        except FloodWait as e:
-                            logger.warning(f"下载消息 {message.id} 遇到限流，等待 {e.value} 秒")
-                            await asyncio.sleep(float(e.value))
-                            continue
-                        except Exception as e:
-                            logger.error(f"下载消息 {message.id} 分片失败: {e}")
-                            return None
-                return Path(file_path) if file_path.exists() else None
+                    async for chunk in client.stream_media(message):
+                        f.write(chunk)
+                        downloaded_bytes += len(chunk)
+
+                        # 可选：显示下载进度（每10MB显示一次）
+                        if downloaded_bytes % (10 * 1024 * 1024) == 0:
+                            progress_mb = downloaded_bytes / 1024 / 1024
+                            logger.info(f"消息 {message.id} 已下载: {progress_mb:.1f} MB")
+
+                # 验证下载完整性
+                actual_size = file_path.stat().st_size
+                if file_size > 0 and actual_size != file_size:
+                    logger.warning(f"消息 {message.id} 文件大小不匹配: 期望 {file_size}, 实际 {actual_size}")
+
+                logger.info(f"流式下载完成: {file_path.name} ({actual_size / 1024 / 1024:.2f} MB)")
+                return file_path
+
             except FloodWait as e:
                 logger.warning(f"下载消息 {message.id} 遇到限流，等待 {e.value} 秒")
                 await asyncio.sleep(float(e.value))
+                # 递归重试
                 return await self.download_media_file(client, message)
+
             except Exception as e:
-                logger.error(f"下载消息 {message.id} 失败: {e}")
+                logger.error(f"流式下载消息 {message.id} 失败: {e}")
+                # 清理不完整的文件
+                if file_path.exists():
+                    file_path.unlink()
                 return None
+
         except Exception as e:
             logger.error(f"下载消息 {message.id} 失败: {e}")
             return None
 
     async def download_messages_range(self, client: Client, start_id: int, end_id: int, client_index: int) -> Dict:
+        """下载指定范围的消息"""
         client_name = f"客户端{client_index + 1}"
         logger.info(f"{client_name} 开始下载消息范围: {start_id} - {end_id}")
+
         if not self.channel_info:
             self.channel_info = await self.get_channel_info(client)
             logger.info(f"频道信息: {self.channel_info['username']} - {self.channel_info['title']}")
+
         downloaded = 0
         failed = 0
+
         try:
             message_ids = list(range(start_id, end_id + 1))
             batch_size = 50
+
             for i in range(0, len(message_ids), batch_size):
                 batch_ids = message_ids[i:i + batch_size]
+
                 try:
                     messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
+
                     for message in messages:
                         if message and hasattr(message, 'media') and message.media:
+                            # 获取文件大小信息
                             file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
                                         getattr(getattr(message, 'video', None), 'file_size', 0) or \
                                         getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+
                             logger.info(f"{client_name} 消息 {message.id} 文件大小: {file_size / 1024 / 1024:.2f} MB")
+
                             try:
                                 is_media_group = self.is_media_group_message(message)
                                 if is_media_group:
                                     logger.info(f"{client_name} 检测到媒体组消息: {message.id} (组ID: {message.media_group_id})")
+
                                 file_path = await self.download_media_file(client, message)
+
                                 if file_path:
                                     downloaded += 1
                                     if is_media_group:
@@ -384,25 +380,35 @@ class MultiClientDownloader:
                                         logger.info(f"{client_name} 下载成功: {file_path.name}")
                                 else:
                                     failed += 1
+
                             except Exception as e:
                                 failed += 1
                                 logger.error(f"{client_name} 下载消息 {message.id} 失败: {e}")
                         else:
+                            # 处理文本消息
                             if message:
                                 await self.save_text_message(message)
                                 downloaded += 1
+
+                    # 更新统计信息
                     self.stats["downloaded"] += len([m for m in messages if m])
                     progress = (downloaded + failed) / (end_id - start_id + 1) * 100
                     logger.info(f"{client_name} 进度: {progress:.1f}% ({downloaded} 成功, {failed} 失败)")
+
                 except FloodWait as e:
                     logger.warning(f"{client_name} 遇到限流，等待 {e.value} 秒")
                     await asyncio.sleep(float(e.value))
+
                 except Exception as e:
                     logger.error(f"{client_name} 批量获取消息失败: {e}")
                     failed += len(batch_ids)
+
+                # 短暂延迟，避免过于频繁的请求
                 await asyncio.sleep(0.2)
+
         except Exception as e:
             logger.error(f"{client_name} 下载任务失败: {e}")
+
         logger.info(f"{client_name} 完成下载: {downloaded} 成功, {failed} 失败")
         return {
             "client": client_name,
@@ -413,29 +419,38 @@ class MultiClientDownloader:
 
     async def run_download(self):
         """运行下载任务"""
-        logger.info("🚀 开始多客户端消息下载验证")
+        logger.info("🚀 开始多客户端消息下载验证 - Stream Media 版本")
         logger.info(f"目标频道: {TARGET_CHANNEL}")
         logger.info(f"消息范围: {START_MESSAGE_ID} - {END_MESSAGE_ID} (共 {TOTAL_MESSAGES} 条)")
+
         clients = self.create_clients()
         message_ranges = self.calculate_message_ranges()
         self.stats["start_time"] = time.time()
+
         try:
             async def client_task(client, message_range, index):
+                # 错开启动时间，避免同时连接
                 if index > 0:
                     delay_seconds = index * 0.5
                     logger.info(f"客户端{index + 1} 将在 {delay_seconds} 秒后启动...")
                     await asyncio.sleep(delay_seconds)
+
                 logger.info(f"客户端{index + 1} 正在启动...")
                 async with client:
                     return await self.download_messages_range(
                         client, message_range[0], message_range[1], index
                     )
+
+            # 创建并发任务
             tasks = [
                 client_task(clients[i], message_ranges[i], i)
                 for i in range(len(clients))
             ]
+
+            # 等待所有任务完成
             results = await asyncio.gather(*tasks, return_exceptions=True)
             await self.process_results(results)
+
         except Exception as e:
             logger.error(f"下载任务执行失败: {e}")
 
@@ -444,31 +459,43 @@ class MultiClientDownloader:
         total_downloaded = 0
         total_failed = 0
         client_results = []
+
         for result in results:
             if isinstance(result, dict):
                 total_downloaded += result["downloaded"]
-                total_failed = result["failed"]
+                total_failed += result["failed"]
                 client_results.append(result)
             else:
                 logger.error(f"任务异常: {result}")
+
+        # 输出详细统计信息
         logger.info("\n" + "="*60)
-        logger.info("📊 下载结果统计")
+        logger.info("📊 Stream Media 下载结果统计")
         logger.info("="*60)
+
         for result in client_results:
             logger.info(f"{result['client']}: {result['downloaded']} 成功, {result['failed']} 失败 (范围: {result['range']})")
+
         elapsed_time = time.time() - self.stats["start_time"]
         success_rate = (total_downloaded / TOTAL_MESSAGES * 100) if TOTAL_MESSAGES > 0 else 0
+
         logger.info("-" * 60)
         logger.info(f"总计: {total_downloaded} 成功, {total_failed} 失败")
         logger.info(f"成功率: {success_rate:.1f}%")
         logger.info(f"耗时: {elapsed_time:.1f} 秒")
+
         if elapsed_time > 0:
             logger.info(f"平均速度: {total_downloaded / elapsed_time:.1f} 条/秒")
+
         logger.info(f"下载目录: {self.download_dir.absolute()}")
         logger.info("="*60)
 
+
 async def main():
+    """主函数"""
+    # 启动带宽监控
     threading.Thread(target=monitor_bandwidth, daemon=True).start()
+
     try:
         downloader = MultiClientDownloader()
         await downloader.run_download()
@@ -477,17 +504,23 @@ async def main():
     except Exception as e:
         logger.error(f"程序执行失败: {e}")
 
+
 if __name__ == "__main__":
     # 显示日志文件位置
     logs_dir = Path("logs")
-    log_file = logs_dir / "test_downloader.log"
+    log_file = logs_dir / "test_downloader_stream.log"
     logger.info(f"📝 日志文件位置: {log_file.absolute()}")
     logger.info("🗑️ 日志文件已清除，开始新的日志记录")
 
+    # 检查 TgCrypto
     try:
         import tgcrypto
         logger.info("✅ TgCrypto 已启用，加密操作将被加速")
     except ImportError:
         logger.warning("⚠️ TgCrypto 未安装，建议安装以提升性能: pip install tgcrypto")
+
+    # 显示版本信息
+    logger.info("🌊 使用 Pyrogram stream_media 方法进行流式下载")
+    logger.info("💡 优势: 内存效率高、自动数据中心选择、内置错误处理")
 
     asyncio.run(main())

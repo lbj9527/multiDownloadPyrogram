@@ -53,17 +53,17 @@ API_HASH = "cc2fa5a762621d306d8de030614e4555"  # 请替换为您的API Hash
 PHONE_NUMBER = "+8618758361347"  # 请替换为您的电话号码
 
 # 下载配置 - 硬编码配置
-TARGET_CHANNEL = "@csdkl"  # 请替换为目标频道（如：@channelname 或频道链接）
-START_MESSAGE_ID = 72036  # 开始消息ID
-END_MESSAGE_ID = 72155  # 结束消息ID
+TARGET_CHANNEL = "@zbzwx"  # 请替换为目标频道（如：@channelname 或频道链接）
+START_MESSAGE_ID = 37788  # 开始消息ID
+END_MESSAGE_ID = 37794  # 结束消息ID
 TOTAL_MESSAGES = END_MESSAGE_ID - START_MESSAGE_ID + 1
 
 # 会话文件配置
 # 确保这些会话文件已通过 scripts/simple_session_generator.py 生成
 SESSION_NAMES = [
-    "client_session_1",
-    "client_session_2",
-    "client_session_3"
+    "client_8618758361347_1",
+    "client_8618758361347_2",
+    "client_8618758361347_3"
 ]
 
 # SOCKS5 代理配置 - 硬编码配置

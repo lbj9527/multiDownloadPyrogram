@@ -141,9 +141,9 @@ DEFAULT_SLEEP_THRESHOLD = 10
 
 # 会话文件名称常量（支持最多10个客户端）
 DEFAULT_SESSION_NAMES = [
-    "client_session_1",
-    "client_session_2",
-    "client_session_3",
+    "client_8618758361347_1",
+    "client_8618758361347_2",
+    "client_8618758361347_3",
     "client_session_4",
     "client_session_5",
     "client_session_6",
