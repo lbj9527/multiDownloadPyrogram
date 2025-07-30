@@ -17,14 +17,13 @@ import logging
 import psutil
 import threading
 
-# 导入智能消息分配器
-from message_distributor import (
-    MessageDistributor,
+# 导入主程序的分配组件
+from core.task_distribution import (
     DistributionConfig,
     DistributionMode,
-    LoadBalanceMetric,
-    convert_messages_to_message_info
+    TaskDistributor
 )
+from core.task_distribution.base import LoadBalanceMetric
 
 # 配置日志 - 强制清除并重新配置
 def setup_logging(verbose: bool = True):
@@ -126,7 +125,7 @@ class MultiClientDownloader:
         # 初始化智能消息分配器（完整配置，与main.py程序保持一致）
         self.distribution_config = DistributionConfig(
             mode=DistributionMode.MEDIA_GROUP_AWARE,  # 使用媒体组感知分配
-            load_balance_metric=LoadBalanceMetric.FILE_COUNT,  # 按文件数量均衡
+            load_balance_metric=LoadBalanceMetric.FILE_COUNT,  # 使用FILE_COUNT测试主程序方法
             max_imbalance_ratio=0.3,  # 最大不均衡比例30%
             prefer_large_groups_first=True,  # 优先分配大媒体组
             enable_validation=True,  # 启用基本验证
@@ -134,31 +133,6 @@ class MultiClientDownloader:
             custom_weights={},  # 自定义权重（可扩展）
             client_preferences={}  # 客户端偏好（可扩展）
         )
-        self.message_distributor = MessageDistributor(self.distribution_config)
-
-        # 显示分配策略信息
-        self._log_distribution_strategy_info()
-
-    def _log_distribution_strategy_info(self):
-        """显示分配策略信息"""
-        try:
-            # 获取当前策略信息
-            strategy_class = self.message_distributor._strategies.get(self.distribution_config.mode)
-            if strategy_class:
-                strategy = strategy_class(self.distribution_config)
-                strategy_info = strategy.get_strategy_info()
-
-                logger.info("🎯 智能消息分配策略信息:")
-                logger.info(f"  策略名称: {strategy_info['name']}")
-                logger.info(f"  策略描述: {strategy_info['description']}")
-                logger.info("  主要特性:")
-                for feature in strategy_info['features']:
-                    logger.info(f"    ✓ {feature}")
-                logger.info("  配置参数:")
-                for key, value in strategy_info['config'].items():
-                    logger.info(f"    {key}: {value}")
-        except Exception as e:
-            logger.warning(f"获取策略信息失败: {e}")
 
     def create_clients(self) -> List[Client]:
         """创建客户端实例"""
@@ -351,52 +325,73 @@ class MultiClientDownloader:
                     logger.warning(f"获取消息批次 {batch_ids[0]}-{batch_ids[-1]} 失败: {e}")
                     continue
 
-            # 2. 转换为MessageInfo对象
-            logger.info("🔄 转换消息对象...")
-            message_infos = convert_messages_to_message_info(all_messages)
-            logger.info(f"成功转换 {len(message_infos)} 条消息")
+            # 2. 使用主程序的分组方法（避免消息转换过程中的信息丢失）
+            logger.info("🧠 使用主程序的MessageGrouper进行分组...")
+            from core.message_grouper import MessageGrouper
 
-            # 3. 执行智能分配（带验证）
-            logger.info("⚖️ 执行智能分配（带消息验证）...")
-            distribution_result, validation_stats = await self.message_distributor.distribute_messages_with_validation(
-                messages=message_infos,
-                client_names=SESSION_NAMES,
-                client=client,
-                channel=TARGET_CHANNEL
+            # 创建消息分组器（与主程序保持一致）
+            message_grouper = MessageGrouper(
+                batch_size=200,
+                max_retries=3
+            )
+
+            # 直接从消息列表进行分组（避免转换过程中的信息丢失）
+            message_collection = message_grouper.group_messages_from_list(all_messages)
+
+            # 记录分组统计
+            grouping_stats = message_collection.get_statistics()
+            logger.info(f"📊 分组完成: {grouping_stats['media_groups_count']} 个媒体组, {grouping_stats['single_messages_count']} 个单消息")
+
+            # 3. 使用主程序的TaskDistributor进行分配
+            logger.info("⚖️ 使用主程序的TaskDistributor进行分配...")
+
+            # 使用类的配置（避免重复配置）
+            distribution_config = self.distribution_config
+
+            # 执行任务分配
+            task_distributor = TaskDistributor(distribution_config)
+            distribution_result = await task_distributor.distribute_tasks(
+                message_collection, SESSION_NAMES, client=client, channel=TARGET_CHANNEL
             )
 
             # 4. 转换为客户端消息ID映射和消息对象映射
             client_message_mapping = {}
             client_message_objects = {}
 
-            # 创建消息ID到消息对象的映射
-            message_id_to_object = {msg.id: msg for msg in all_messages if msg and hasattr(msg, 'id')}
+            # 不再需要消息ID映射，直接使用主程序的方法
 
             for assignment in distribution_result.client_assignments:
                 client_name = assignment.client_name
-                message_ids = assignment.all_message_ids
-                client_message_mapping[client_name] = message_ids
+                # 直接获取所有消息对象（主程序方法）
+                message_objects = assignment.get_all_messages()
+                message_ids = [msg.id for msg in message_objects if msg]
 
-                # 获取对应的消息对象
-                message_objects = []
-                for msg_id in message_ids:
-                    if msg_id in message_id_to_object:
-                        message_objects.append(message_id_to_object[msg_id])
+                client_message_mapping[client_name] = message_ids
                 client_message_objects[client_name] = message_objects
 
-            # 5. 记录验证统计
-            if validation_stats.get("enabled"):
-                logger.info("📊 消息验证统计:")
-                logger.info(f"  原始消息数: {validation_stats['original_count']}")
-                logger.info(f"  有效消息数: {validation_stats['valid_count']}")
-                logger.info(f"  无效消息数: {validation_stats['invalid_count']}")
-                logger.info(f"  验证通过率: {validation_stats['validation_rate']:.1%}")
-
-                if validation_stats['invalid_count'] > 0:
-                    invalid_sample = validation_stats['invalid_ids'][:5]
-                    logger.warning(f"  无效消息ID示例: {invalid_sample}{'...' if len(validation_stats['invalid_ids']) > 5 else ''}")
+            # 5. 记录分配统计（使用主程序的统计方法）
+            load_balance_stats = distribution_result.get_load_balance_stats()
+            logger.info("📊 任务分配统计:")
+            logger.info(f"  总消息数: {distribution_result.total_messages}")
+            logger.info(f"  总文件数: {distribution_result.total_files}")
+            logger.info(f"  客户端数量: {load_balance_stats['clients_count']}")
+            logger.info(f"  文件分布: {load_balance_stats['file_distribution']}")
+            logger.info(f"  大小分布: {[f'{size/(1024*1024):.2f} MB' for size in load_balance_stats['size_distribution']]}")
+            logger.info(f"  文件均衡比例: {load_balance_stats['file_balance_ratio']:.3f}")
+            logger.info(f"  大小均衡比例: {load_balance_stats['size_balance_ratio']:.3f}")
 
             logger.info("✅ 智能消息分配完成")
+
+            # 创建兼容的统计信息
+            validation_stats = {
+                "enabled": True,
+                "original_count": len(all_messages),
+                "valid_count": distribution_result.total_messages,
+                "invalid_count": len(all_messages) - distribution_result.total_messages,
+                "validation_rate": distribution_result.total_messages / len(all_messages) if all_messages else 0,
+                "invalid_ids": []
+            }
+
             return client_message_mapping, client_message_objects, validation_stats
 
         except Exception as e:

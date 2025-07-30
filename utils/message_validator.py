@@ -143,59 +143,59 @@ class MessageValidator:
     def _is_valid_message(self, message: Any) -> bool:
         """
         判断消息是否有效
-        
+
         根据以下规则判断：
         1. 消息不为None（存在）
         2. 消息有ID属性
         3. 对于非纯文本消息，必须包含媒体或文本内容
-        
+
         Args:
             message: 消息对象
-            
+
         Returns:
             消息是否有效
         """
         # 基本存在性检查
         if message is None:
             return False
-        
+
         # 检查是否有ID
         if not hasattr(message, 'id') or message.id is None:
             return False
-        
+
         # 检查消息内容
         has_text = hasattr(message, 'text') and message.text
         has_caption = hasattr(message, 'caption') and message.caption
         has_media = self._has_media(message)
-        
+
         # 消息必须有文本、说明文字或媒体内容之一
         if not (has_text or has_caption or has_media):
             return False
-        
+
         return True
     
     def _has_media(self, message: Any) -> bool:
         """
         检查消息是否包含媒体
-        
+
         Args:
             message: 消息对象
-            
+
         Returns:
             是否包含媒体
         """
         if not message:
             return False
-        
+
         # 检查通用media属性
         if hasattr(message, 'media') and message.media:
             return True
-        
+
         # 检查具体的媒体类型
         for media_type in SUPPORTED_MEDIA_TYPES:
             if hasattr(message, media_type) and getattr(message, media_type):
                 return True
-        
+
         return False
     
     def get_validation_report(self) -> str:
