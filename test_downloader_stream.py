@@ -321,12 +321,12 @@ class MultiClientDownloader:
             current_start = current_end + 1
         return ranges
 
-    async def smart_distribute_messages(self, client: Client) -> Tuple[Dict[str, List[int]], Dict[str, Any]]:
+    async def smart_distribute_messages(self, client: Client) -> Tuple[Dict[str, List[int]], Dict[str, List[Any]], Dict[str, Any]]:
         """
         智能消息分配 - 使用媒体组感知算法 + 消息验证
 
         Returns:
-            Tuple[Dict[client_name, List[message_ids]], validation_stats] - 分配结果和验证统计
+            Tuple[Dict[client_name, List[message_ids]], Dict[client_name, List[message_objects]], validation_stats] - 分配结果、消息对象和验证统计
         """
         logger.info("🧠 开始智能消息分配（带验证）...")
 
@@ -363,10 +363,24 @@ class MultiClientDownloader:
                 channel=TARGET_CHANNEL
             )
 
-            # 4. 转换为客户端消息ID映射
+            # 4. 转换为客户端消息ID映射和消息对象映射
             client_message_mapping = {}
+            client_message_objects = {}
+
+            # 创建消息ID到消息对象的映射
+            message_id_to_object = {msg.id: msg for msg in all_messages if msg and hasattr(msg, 'id')}
+
             for assignment in distribution_result.client_assignments:
-                client_message_mapping[assignment.client_name] = assignment.all_message_ids
+                client_name = assignment.client_name
+                message_ids = assignment.all_message_ids
+                client_message_mapping[client_name] = message_ids
+
+                # 获取对应的消息对象
+                message_objects = []
+                for msg_id in message_ids:
+                    if msg_id in message_id_to_object:
+                        message_objects.append(message_id_to_object[msg_id])
+                client_message_objects[client_name] = message_objects
 
             # 5. 记录验证统计
             if validation_stats.get("enabled"):
@@ -381,7 +395,7 @@ class MultiClientDownloader:
                     logger.warning(f"  无效消息ID示例: {invalid_sample}{'...' if len(validation_stats['invalid_ids']) > 5 else ''}")
 
             logger.info("✅ 智能消息分配完成")
-            return client_message_mapping, validation_stats
+            return client_message_mapping, client_message_objects, validation_stats
 
         except Exception as e:
             logger.error(f"❌ 智能消息分配失败: {e}")
@@ -390,10 +404,12 @@ class MultiClientDownloader:
             # 回退到简单范围分配
             ranges = self.calculate_message_ranges()
             client_message_mapping = {}
+            client_message_objects = {}
             for i, (start_id, end_id) in enumerate(ranges):
                 client_name = SESSION_NAMES[i]
                 message_ids = list(range(start_id, end_id + 1))
                 client_message_mapping[client_name] = message_ids
+                client_message_objects[client_name] = []  # 空列表，需要重新获取
 
             fallback_stats = {
                 "enabled": False,
@@ -401,7 +417,7 @@ class MultiClientDownloader:
                 "reason": str(e)
             }
 
-            return client_message_mapping, fallback_stats
+            return client_message_mapping, client_message_objects, fallback_stats
 
     async def download_media_file(self, client: Client, message) -> Optional[Path]:
         """使用 stream_media 方法下载媒体文件"""
@@ -467,7 +483,8 @@ class MultiClientDownloader:
         message_ids = list(range(start_id, end_id + 1))
         return await self.download_messages_by_ids(client, message_ids, client_index)
 
-    async def download_messages_by_ids(self, client: Client, message_ids: List[int], client_index: int) -> Dict:
+    async def download_messages_by_ids(self, client: Client, message_ids: List[int], client_index: int,
+                                      pre_fetched_messages: Optional[List[Any]] = None) -> Dict:
         """根据消息ID列表下载消息"""
         client_name = f"客户端{client_index + 1}"
 
@@ -491,63 +508,114 @@ class MultiClientDownloader:
         failed = 0
 
         try:
-            batch_size = 50
+            # 如果有预获取的消息，直接使用，否则重新获取
+            if pre_fetched_messages:
+                logger.info(f"{client_name} 使用预获取的 {len(pre_fetched_messages)} 条消息")
+                all_messages = pre_fetched_messages
 
-            for i in range(0, len(message_ids), batch_size):
-                batch_ids = message_ids[i:i + batch_size]
+                # 直接处理所有消息
+                for message in all_messages:
+                    if message and hasattr(message, 'media') and message.media:
+                        # 获取文件大小信息
+                        file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
+                                    getattr(getattr(message, 'video', None), 'file_size', 0) or \
+                                    getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
 
-                try:
-                    messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
+                        logger.info(f"{client_name} 消息 {message.id} 文件大小: {file_size / 1024 / 1024:.2f} MB")
 
-                    for message in messages:
-                        if message and hasattr(message, 'media') and message.media:
-                            # 获取文件大小信息
-                            file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
-                                        getattr(getattr(message, 'video', None), 'file_size', 0) or \
-                                        getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+                        try:
+                            is_media_group = self.is_media_group_message(message)
+                            if is_media_group:
+                                logger.info(f"{client_name} 检测到媒体组消息: {message.id} (组ID: {message.media_group_id})")
 
-                            logger.info(f"{client_name} 消息 {message.id} 文件大小: {file_size / 1024 / 1024:.2f} MB")
+                            file_path = await self.download_media_file(client, message)
 
-                            try:
-                                is_media_group = self.is_media_group_message(message)
-                                if is_media_group:
-                                    logger.info(f"{client_name} 检测到媒体组消息: {message.id} (组ID: {message.media_group_id})")
-
-                                file_path = await self.download_media_file(client, message)
-
-                                if file_path:
-                                    downloaded += 1
-                                    if is_media_group:
-                                        logger.info(f"{client_name} 媒体组文件下载成功: {file_path.name}")
-                                    else:
-                                        logger.info(f"{client_name} 下载成功: {file_path.name}")
-                                else:
-                                    failed += 1
-
-                            except Exception as e:
-                                failed += 1
-                                logger.error(f"{client_name} 下载消息 {message.id} 失败: {e}")
-                        else:
-                            # 处理文本消息
-                            if message:
-                                await self.save_text_message(message)
+                            if file_path:
                                 downloaded += 1
+                                if is_media_group:
+                                    logger.info(f"{client_name} 媒体组文件下载成功: {file_path.name}")
+                                else:
+                                    logger.info(f"{client_name} 下载成功: {file_path.name}")
+                            else:
+                                failed += 1
 
-                    # 更新统计信息
-                    self.stats["downloaded"] += len([m for m in messages if m])
-                    progress = (downloaded + failed) / len(message_ids) * 100
-                    logger.info(f"{client_name} 进度: {progress:.1f}% ({downloaded} 成功, {failed} 失败)")
+                        except Exception as e:
+                            failed += 1
+                            logger.error(f"{client_name} 下载消息 {message.id} 失败: {e}")
+                    else:
+                        # 处理文本消息
+                        if message:
+                            await self.save_text_message(message)
+                            downloaded += 1
 
-                except FloodWait as e:
-                    logger.warning(f"{client_name} 遇到限流，等待 {e.value} 秒")
-                    await asyncio.sleep(float(e.value))
+                    # 显示进度
+                    progress = (downloaded + failed) / len(all_messages) * 100
+                    if (downloaded + failed) % 10 == 0:  # 每10个消息显示一次进度
+                        logger.info(f"{client_name} 进度: {progress:.1f}% ({downloaded} 成功, {failed} 失败)")
 
-                except Exception as e:
-                    logger.error(f"{client_name} 批量获取消息失败: {e}")
-                    failed += len(batch_ids)
+                    # 短暂延迟，避免过于频繁的请求
+                    await asyncio.sleep(0.1)
 
-                # 短暂延迟，避免过于频繁的请求
-                await asyncio.sleep(0.2)
+            else:
+                # 回退到原来的批量获取逻辑
+                logger.info(f"{client_name} 没有预获取消息，使用批量获取模式")
+                batch_size = 50
+
+                for i in range(0, len(message_ids), batch_size):
+                    batch_ids = message_ids[i:i + batch_size]
+
+                    try:
+                        messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
+
+                        for message in messages:
+                            if message and hasattr(message, 'media') and message.media:
+                                # 获取文件大小信息
+                                file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
+                                            getattr(getattr(message, 'video', None), 'file_size', 0) or \
+                                            getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+
+                                logger.info(f"{client_name} 消息 {message.id} 文件大小: {file_size / 1024 / 1024:.2f} MB")
+
+                                try:
+                                    is_media_group = self.is_media_group_message(message)
+                                    if is_media_group:
+                                        logger.info(f"{client_name} 检测到媒体组消息: {message.id} (组ID: {message.media_group_id})")
+
+                                    file_path = await self.download_media_file(client, message)
+
+                                    if file_path:
+                                        downloaded += 1
+                                        if is_media_group:
+                                            logger.info(f"{client_name} 媒体组文件下载成功: {file_path.name}")
+                                        else:
+                                            logger.info(f"{client_name} 下载成功: {file_path.name}")
+                                    else:
+                                        failed += 1
+
+                                except Exception as e:
+                                    failed += 1
+                                    logger.error(f"{client_name} 下载消息 {message.id} 失败: {e}")
+                            else:
+                                # 处理文本消息
+                                if message:
+                                    await self.save_text_message(message)
+                                    downloaded += 1
+
+                        # 更新统计信息
+                        self.stats["downloaded"] += len([m for m in messages if m])
+                        progress = (downloaded + failed) / len(message_ids) * 100
+                        logger.info(f"{client_name} 进度: {progress:.1f}% ({downloaded} 成功, {failed} 失败)")
+
+                    except FloodWait as e:
+                        logger.warning(f"{client_name} 遇到限流，等待 {e.value} 秒")
+                        await asyncio.sleep(float(e.value))
+
+                    except Exception as e:
+                        logger.error(f"{client_name} 批量获取消息失败: {e}")
+                        failed += len(batch_ids)
+
+                    # 短暂延迟，避免过于频繁的请求
+                    await asyncio.sleep(0.2)
 
         except Exception as e:
             logger.error(f"{client_name} 下载任务失败: {e}")
@@ -574,6 +642,7 @@ class MultiClientDownloader:
             # 尝试使用智能分配
             use_smart_distribution = True
             client_message_mapping = None
+            client_message_objects = None
             validation_stats = None
 
             if use_smart_distribution:
@@ -581,7 +650,7 @@ class MultiClientDownloader:
                     # 使用第一个客户端进行消息分析
                     first_client = clients[0]
                     async with first_client:
-                        client_message_mapping, validation_stats = await self.smart_distribute_messages(first_client)
+                        client_message_mapping, client_message_objects, validation_stats = await self.smart_distribute_messages(first_client)
                     logger.info("✅ 使用智能消息分配")
                 except Exception as e:
                     logger.warning(f"智能分配失败，回退到简单分配: {e}")
@@ -592,12 +661,14 @@ class MultiClientDownloader:
                 logger.info("🔄 使用简单范围分配")
                 message_ranges = self.calculate_message_ranges()
                 client_message_mapping = {}
+                client_message_objects = {}
                 for i, (start_id, end_id) in enumerate(message_ranges):
                     session_name = SESSION_NAMES[i]
                     message_ids = list(range(start_id, end_id + 1))
                     client_message_mapping[session_name] = message_ids
+                    client_message_objects[session_name] = []  # 空列表，需要重新获取
 
-            async def client_task(client, client_name, message_ids, index):
+            async def client_task(client, session_name, message_ids, pre_fetched_messages, index):
                 # 错开启动时间，避免同时连接
                 if index > 0:
                     delay_seconds = index * 0.5
@@ -606,14 +677,15 @@ class MultiClientDownloader:
 
                 logger.info(f"客户端{index + 1} 正在启动...")
                 async with client:
-                    return await self.download_messages_by_ids(client, message_ids, index)
+                    return await self.download_messages_by_ids(client, message_ids, index, pre_fetched_messages)
 
             # 创建并发任务
             tasks = []
             for i, client in enumerate(clients):
-                client_name = SESSION_NAMES[i]
-                message_ids = client_message_mapping.get(client_name, [])
-                task = client_task(client, client_name, message_ids, i)
+                session_name = SESSION_NAMES[i]
+                message_ids = client_message_mapping.get(session_name, [])
+                pre_fetched_messages = client_message_objects.get(session_name, []) if client_message_objects else []
+                task = client_task(client, session_name, message_ids, pre_fetched_messages, i)
                 tasks.append(task)
 
             # 等待所有任务完成
