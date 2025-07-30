@@ -65,13 +65,15 @@ def setup_logging(verbose: bool = True):
     if verbose:
         logging.getLogger("pyrogram").setLevel(logging.INFO)
     else:
-        logging.getLogger("pyrogram").setLevel(logging.WARNING)
-        logging.getLogger("pyrogram.connection").setLevel(logging.WARNING)
-        logging.getLogger("pyrogram.session").setLevel(logging.WARNING)
+        # 设置更严格的日志级别，减少网络连接日志
+        logging.getLogger("pyrogram").setLevel(logging.ERROR)
+        logging.getLogger("pyrogram.connection").setLevel(logging.ERROR)
+        logging.getLogger("pyrogram.session").setLevel(logging.ERROR)
         logging.getLogger("pyrogram.dispatcher").setLevel(logging.WARNING)
-        logging.getLogger("pyrogram.connection.transport").setLevel(logging.WARNING)
+        logging.getLogger("pyrogram.connection.transport").setLevel(logging.ERROR)
+        logging.getLogger("pyrogram.connection.transport.tcp").setLevel(logging.ERROR)
 
-setup_logging(verbose=True)  # 启用详细日志
+setup_logging(verbose=False)  # 禁用Pyrogram详细日志
 logger = logging.getLogger(__name__)
 
 # ==================== 配置区域 ====================
