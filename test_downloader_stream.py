@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any
 from pyrogram.client import Client
 from pyrogram.errors import FloodWait
+from pyrogram.raw.functions.upload import GetFile
+from pyrogram.raw.types import InputDocumentFileLocation, InputPhotoFileLocation
+from pyrogram.file_id import FileId, FileType
 import logging
 import psutil
 import threading
@@ -95,6 +98,10 @@ PROXY_CONFIG = {
     "port": 7890
 } if USE_PROXY else None
 DOWNLOAD_DIR = Path("downloads")
+
+# 调试选项
+ENABLE_SMART_DISTRIBUTION = False  # 暂时禁用智能分配，避免卡住
+ENABLE_QUICK_FALLBACK = True       # 启用快速回退
 # ==================== 配置区域结束 ====================
 
 def monitor_bandwidth():
@@ -506,7 +513,108 @@ class MultiClientDownloader:
 
             return client_message_mapping, client_message_objects, fallback_stats
 
-    async def download_media_file(self, client: Client, message) -> Optional[Path]:
+    def is_video_file(self, message) -> bool:
+        """检查消息是否为视频文件"""
+        if hasattr(message, 'video') and message.video:
+            return True
+        elif hasattr(message, 'video_note') and message.video_note:
+            return True
+        elif hasattr(message, 'animation') and message.animation:
+            return True
+        elif hasattr(message, 'document') and message.document:
+            mime_type = getattr(message.document, 'mime_type', '')
+            if mime_type.startswith('video/'):
+                return True
+            # 检查文件扩展名
+            file_name = getattr(message.document, 'file_name', '')
+            if file_name:
+                video_extensions = ['.mp4', '.avi', '.mkv', '.mov', '.webm', '.flv', '.wmv', '.m4v']
+                _, ext = os.path.splitext(file_name.lower())
+                return ext in video_extensions
+        return False
+
+    def get_file_size_mb(self, message) -> float:
+        """获取文件大小（MB）"""
+        file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
+                    getattr(getattr(message, 'video', None), 'file_size', 0) or \
+                    getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+        return file_size / 1024 / 1024
+
+    async def download_media_file_raw_api(self, client: Client, message) -> Optional[Path]:
+        """使用RAW API方法下载媒体文件（来自test_downloader.py）"""
+        try:
+            channel_dir = self.get_channel_directory()
+            file_name = self.generate_filename_by_type(message)
+            file_path = channel_dir / file_name
+            file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
+                        getattr(getattr(message, 'video', None), 'file_size', 0) or \
+                        getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+            logger.info(f"RAW API下载消息 {message.id} (大小: {file_size / 1024 / 1024:.2f} MB)")
+
+            # 获取媒体对象
+            media = (message.document or message.video or message.photo or message.audio or
+                     message.voice or message.video_note or message.animation or message.sticker)
+            if not media:
+                logger.error(f"消息 {message.id} 无有效媒体")
+                return None
+
+            # 解码 file_id 获取文件位置
+            file_id_str = media.file_id
+            file_id_obj = FileId.decode(file_id_str)
+            logger.info(f"消息 {message.id} 媒体类型: {FileType(file_id_obj.file_type).name}")
+
+            # 构造文件位置
+            if file_id_obj.file_type == FileType.PHOTO:
+                location = InputPhotoFileLocation(
+                    id=file_id_obj.media_id,
+                    access_hash=file_id_obj.access_hash,
+                    file_reference=file_id_obj.file_reference,
+                    thumb_size=file_id_obj.thumbnail_size or ''
+                )
+            else:
+                location = InputDocumentFileLocation(
+                    id=file_id_obj.media_id,
+                    access_hash=file_id_obj.access_hash,
+                    file_reference=file_id_obj.file_reference,
+                    thumb_size=file_id_obj.thumbnail_size or ''
+                )
+
+            # 分片下载
+            offset = 0
+            chunk_size = 1024 * 1024  # 1MB，Telegram API 最大值
+            try:
+                with open(file_path, 'wb') as f:
+                    while offset < file_size or file_size == 0:
+                        try:
+                            result = await client.invoke(GetFile(
+                                location=location,
+                                offset=offset,
+                                limit=chunk_size
+                            ))
+                            if not hasattr(result, 'bytes') or not result.bytes:
+                                break
+                            f.write(result.bytes)
+                            offset += len(result.bytes)
+                        except FloodWait as e:
+                            logger.warning(f"RAW API下载消息 {message.id} 遇到限流，等待 {e.value} 秒")
+                            await asyncio.sleep(float(e.value))
+                            continue
+                        except Exception as e:
+                            logger.error(f"RAW API下载消息 {message.id} 分片失败: {e}")
+                            return None
+                return Path(file_path) if file_path.exists() else None
+            except FloodWait as e:
+                logger.warning(f"RAW API下载消息 {message.id} 遇到限流，等待 {e.value} 秒")
+                await asyncio.sleep(float(e.value))
+                return await self.download_media_file_raw_api(client, message)
+            except Exception as e:
+                logger.error(f"RAW API下载消息 {message.id} 失败: {e}")
+                return None
+        except Exception as e:
+            logger.error(f"RAW API下载消息 {message.id} 失败: {e}")
+            return None
+
+    async def download_media_file_stream(self, client: Client, message) -> Optional[Path]:
         """使用 stream_media 方法下载媒体文件"""
         try:
             channel_dir = self.get_channel_directory()
@@ -518,7 +626,7 @@ class MultiClientDownloader:
                         getattr(getattr(message, 'video', None), 'file_size', 0) or \
                         getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
 
-            logger.info(f"开始流式下载消息 {message.id} (大小: {file_size / 1024 / 1024:.2f} MB)")
+            logger.info(f"Stream下载消息 {message.id} (大小: {file_size / 1024 / 1024:.2f} MB)")
 
             # 检查是否有有效媒体
             media = (message.document or message.video or message.photo or message.audio or
@@ -545,21 +653,42 @@ class MultiClientDownloader:
                 if file_size > 0 and actual_size != file_size:
                     logger.warning(f"消息 {message.id} 文件大小不匹配: 期望 {file_size}, 实际 {actual_size}")
 
-                logger.info(f"流式下载完成: {file_path.name} ({actual_size / 1024 / 1024:.2f} MB)")
+                logger.info(f"Stream下载完成: {file_path.name} ({actual_size / 1024 / 1024:.2f} MB)")
                 return file_path
 
             except FloodWait as e:
-                logger.warning(f"下载消息 {message.id} 遇到限流，等待 {e.value} 秒")
+                logger.warning(f"Stream下载消息 {message.id} 遇到限流，等待 {e.value} 秒")
                 await asyncio.sleep(float(e.value))
                 # 递归重试
-                return await self.download_media_file(client, message)
+                return await self.download_media_file_stream(client, message)
 
             except Exception as e:
-                logger.error(f"流式下载消息 {message.id} 失败: {e}")
+                logger.error(f"Stream下载消息 {message.id} 失败: {e}")
                 # 清理不完整的文件
                 if file_path.exists():
                     file_path.unlink()
                 return None
+
+        except Exception as e:
+            logger.error(f"Stream下载消息 {message.id} 失败: {e}")
+            return None
+
+    async def download_media_file(self, client: Client, message) -> Optional[Path]:
+        """智能选择下载方法：小于50MB的非视频文件使用RAW API，其他使用stream_media"""
+        try:
+            # 获取文件大小（MB）
+            file_size_mb = self.get_file_size_mb(message)
+            is_video = self.is_video_file(message)
+
+            # 决策逻辑：文件大小小于50MB且非视频文件使用RAW API，其他使用stream_media
+            use_raw_api = file_size_mb < 50.0 and not is_video
+
+            if use_raw_api:
+                logger.info(f"消息 {message.id}: 使用RAW API下载 (大小: {file_size_mb:.2f} MB, 视频: {is_video})")
+                return await self.download_media_file_raw_api(client, message)
+            else:
+                logger.info(f"消息 {message.id}: 使用Stream下载 (大小: {file_size_mb:.2f} MB, 视频: {is_video})")
+                return await self.download_media_file_stream(client, message)
 
         except Exception as e:
             logger.error(f"下载消息 {message.id} 失败: {e}")
@@ -739,13 +868,17 @@ class MultiClientDownloader:
                     # 使用所有客户端进行并发消息获取和智能分配
                     logger.info("🚀 启动并发获取 + 智能分配模式")
 
-                    # 先连接所有客户端用于消息获取
+                    # 先连接所有客户端用于消息获取（添加超时处理）
                     connected_clients = []
                     for i, client in enumerate(clients):
                         try:
-                            await client.start()
+                            logger.info(f"🔄 正在连接客户端{i+1}...")
+                            # 添加超时处理，避免无限等待
+                            await asyncio.wait_for(client.start(), timeout=30.0)
                             connected_clients.append(client)
                             logger.info(f"✅ 客户端{i+1} 连接成功")
+                        except asyncio.TimeoutError:
+                            logger.warning(f"⚠️ 客户端{i+1} 连接超时（30秒）")
                         except Exception as e:
                             logger.warning(f"⚠️ 客户端{i+1} 连接失败: {e}")
 
