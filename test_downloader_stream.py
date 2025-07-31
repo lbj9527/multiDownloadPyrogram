@@ -519,12 +519,22 @@ class MultiClientDownloader:
                 return ext in video_extensions
         return False
 
+    def get_file_size_bytes(self, message) -> int:
+        """获取文件大小（字节）- 支持所有媒体类型"""
+        # 检查所有可能的媒体类型
+        media_types = ['document', 'video', 'photo', 'audio', 'voice',
+                      'video_note', 'animation', 'sticker']
+
+        for media_type in media_types:
+            media = getattr(message, media_type, None)
+            if media and hasattr(media, 'file_size') and media.file_size:
+                return media.file_size
+
+        return 0
+
     def get_file_size_mb(self, message) -> float:
-        """获取文件大小（MB）"""
-        file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
-                    getattr(getattr(message, 'video', None), 'file_size', 0) or \
-                    getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
-        return file_size / 1024 / 1024
+        """获取文件大小（MB）- 支持所有媒体类型"""
+        return self.get_file_size_bytes(message) / 1024 / 1024
 
     async def download_media_file_raw_api(self, client: Client, message) -> Optional[Path]:
         """使用RAW API方法下载媒体文件（来自test_downloader.py）"""
@@ -532,9 +542,7 @@ class MultiClientDownloader:
             channel_dir = self.get_channel_directory()
             file_name = self.generate_filename_by_type(message)
             file_path = channel_dir / file_name
-            file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
-                        getattr(getattr(message, 'video', None), 'file_size', 0) or \
-                        getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+            file_size = self.get_file_size_bytes(message)
             logger.info(f"RAW API下载消息 {message.id} (大小: {file_size / 1024 / 1024:.2f} MB)")
 
             # 获取媒体对象
@@ -608,9 +616,7 @@ class MultiClientDownloader:
             file_path = channel_dir / file_name
 
             # 获取文件大小信息
-            file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
-                        getattr(getattr(message, 'video', None), 'file_size', 0) or \
-                        getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+            file_size = self.get_file_size_bytes(message)
 
             logger.info(f"Stream下载消息 {message.id} (大小: {file_size / 1024 / 1024:.2f} MB)")
 
@@ -716,9 +722,7 @@ class MultiClientDownloader:
                 for message in all_messages:
                     if message and hasattr(message, 'media') and message.media:
                         # 获取文件大小信息
-                        file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
-                                    getattr(getattr(message, 'video', None), 'file_size', 0) or \
-                                    getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
+                        file_size = self.get_file_size_bytes(message)
 
                         logger.info(f"{client_name} 消息 {message.id} 文件大小: {file_size / 1024 / 1024:.2f} MB")
 

@@ -30,57 +30,11 @@ class MessageGroup:
         """添加消息到组"""
         self.messages.append(message)
         self.total_files = len(self.messages)
-        self._update_estimated_size(message)
+        # estimated_size 保持为0，程序中有真实大小计算
     
-    def _get_real_file_size(self, message: Any) -> Optional[int]:
-        """获取真实文件大小
 
-        Args:
-            message: Pyrogram 消息对象
 
-        Returns:
-            文件大小（字节），如果无法获取则返回 None
-        """
-        # 检查所有媒体类型的 file_size 属性
-        for media_type in SUPPORTED_MEDIA_TYPES:
-            if hasattr(message, media_type):
-                media = getattr(message, media_type)
-                if media and hasattr(media, 'file_size') and media.file_size:
-                    return media.file_size
 
-        return None
-
-    def _update_estimated_size(self, message: Any):
-        """更新估算大小（改进版）
-
-        优先使用真实文件大小，如果不可用则使用基于实际数据的改进估算值
-        """
-        # 优先尝试获取真实文件大小
-        real_size = self._get_real_file_size(message)
-        if real_size:
-            self.estimated_size += real_size
-            return
-
-        # 回退到基于实际测试数据的改进估算值
-        if hasattr(message, 'media') and message.media:
-            if hasattr(message, 'photo') and message.photo:
-                self.estimated_size += 3 * MB  # 3MB (基于实际平均值 2.7MB)
-            elif hasattr(message, 'video') and message.video:
-                self.estimated_size += 37 * MB  # 37MB (基于实际平均值 36.4MB)
-            elif hasattr(message, 'audio') and message.audio:
-                self.estimated_size += 5 * MB   # 5MB
-            elif hasattr(message, 'document') and message.document:
-                self.estimated_size += 10 * MB  # 10MB
-            elif hasattr(message, 'animation') and message.animation:
-                self.estimated_size += 3 * MB   # 3MB
-            elif hasattr(message, 'voice') and message.voice:
-                self.estimated_size += 1 * MB   # 1MB
-            elif hasattr(message, 'video_note') and message.video_note:
-                self.estimated_size += 2 * MB   # 2MB
-            else:
-                self.estimated_size += 5 * MB   # 5MB default for unknown media
-        else:
-            self.estimated_size += 1024  # 1KB for text messages
     
     @property
     def is_media_group(self) -> bool:
@@ -145,17 +99,13 @@ class MessageGroupCollection:
         """获取统计信息"""
         total_files = sum(group.total_files for group in self.media_groups.values())
         total_files += len(self.single_messages)
-        
-        total_estimated_size = sum(group.estimated_size for group in self.media_groups.values())
-        # 单消息估算1KB
-        total_estimated_size += len(self.single_messages) * 1024
-        
+
         return {
             "total_messages": self.total_messages,
             "total_files": total_files,
             "media_groups_count": self.total_media_groups,
             "single_messages_count": len(self.single_messages),
-            "estimated_total_size": total_estimated_size,
+            "estimated_total_size": 0,  # 保持字段兼容性，但值为0
             "average_group_size": total_files / max(self.total_media_groups, 1)
         }
 
@@ -174,7 +124,7 @@ class ClientTaskAssignment:
         self.message_groups.append(group)
         self.total_messages += len(group)
         self.total_files += group.total_files
-        self.estimated_size += group.estimated_size
+        # estimated_size 保持为0，程序中有真实大小计算
     
     def get_all_messages(self) -> List[Any]:
         """获取所有消息"""
