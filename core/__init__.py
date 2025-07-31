@@ -1,28 +1,12 @@
 """
 核心业务模块
-包含下载、文件处理、消息处理等核心逻辑
+包含消息分组、任务分配等核心逻辑
 """
 
-from .downloader import TelegramDownloader
-from .file_processor import FileProcessor
-from .message_handler import MessageHandler
-from .storage_strategies import (
-    StorageStrategyInterface,
-    StorageStrategyFactory,
-    RawStorageStrategy,
-    UploadStorageStrategy,
-    HybridStorageStrategy
-)
 from .media_group_utils import MediaGroupUtils
+from .message_grouper import MessageGrouper
 
 __all__ = [
-    'TelegramDownloader',
-    'FileProcessor',
-    'MessageHandler',
-    'StorageStrategyInterface',
-    'StorageStrategyFactory',
-    'RawStorageStrategy',
-    'UploadStorageStrategy',
-    'HybridStorageStrategy',
-    'MediaGroupUtils'
+    'MediaGroupUtils',
+    'MessageGrouper'
 ]

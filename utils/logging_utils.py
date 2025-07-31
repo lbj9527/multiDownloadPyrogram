@@ -11,7 +11,17 @@ from typing import Optional, Any, Callable
 from functools import wraps
 from datetime import datetime
 
-from config.constants import LOG_LEVELS, DEFAULT_LOG_FORMAT, DEFAULT_LOG_FILE
+# 内联常量定义（替代config.constants）
+LOG_LEVELS = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+
+DEFAULT_LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+DEFAULT_LOG_FILE = 'app.log'
 
 
 # 全局标志，防止重复配置

@@ -10,7 +10,23 @@ from typing import Optional, Dict, Set
 import aiofiles
 import asyncio
 
-from config.constants import FILE_EXTENSIONS, FILE_TYPE_CATEGORIES, MB
+# 内联常量定义（替代config.constants）
+MB = 1024 * 1024
+
+FILE_EXTENSIONS = {
+    'image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff'],
+    'video': ['.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.3gp'],
+    'audio': ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a'],
+    'document': ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'],
+    'archive': ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'],
+    'code': ['.py', '.js', '.html', '.css', '.cpp', '.java', '.c', '.h']
+}
+
+FILE_TYPE_CATEGORIES = {
+    'media': ['image', 'video', 'audio'],
+    'text': ['document', 'code'],
+    'compressed': ['archive']
+}
 
 
 def sanitize_filename(filename: str, max_length: int = 100) -> str:

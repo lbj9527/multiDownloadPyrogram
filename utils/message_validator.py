@@ -9,7 +9,11 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait
 
 from utils import get_logger, retry_async
-from config.constants import SUPPORTED_MEDIA_TYPES
+# 内联常量定义（替代config.constants）
+SUPPORTED_MEDIA_TYPES = [
+    'photo', 'video', 'document', 'audio', 'voice',
+    'video_note', 'animation', 'sticker'
+]
 
 logger = get_logger(__name__)
 

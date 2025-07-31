@@ -7,8 +7,13 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-# 导入常量
-from config.constants import MB, SUPPORTED_MEDIA_TYPES
+# 内联常量定义（替代config.constants）
+MB = 1024 * 1024
+
+SUPPORTED_MEDIA_TYPES = [
+    'photo', 'video', 'document', 'audio', 'voice',
+    'video_note', 'animation', 'sticker'
+]
 
 
 @dataclass

@@ -10,7 +10,14 @@ from typing import Any, Callable, Optional, Tuple, Type, Union
 import logging
 
 from .logging_utils import get_logger
-from config.constants import RETRY_SETTINGS
+# 内联常量定义（替代config.constants）
+RETRY_SETTINGS = {
+    'max_retries': 3,
+    'base_delay': 1.0,
+    'max_delay': 60.0,
+    'exponential_base': 2.0,
+    'jitter': True
+}
 
 logger = get_logger(__name__)
 
