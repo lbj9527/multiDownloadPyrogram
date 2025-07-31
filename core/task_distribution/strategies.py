@@ -5,16 +5,6 @@
 import logging
 from typing import List, Dict, Any
 
-# 简单的日志配置
-logger = logging.getLogger(__name__)
-
-# 简单的消息验证器
-class MessageValidator:
-    @staticmethod
-    def validate_message(message) -> bool:
-        """简单的消息验证"""
-        return message is not None and hasattr(message, 'id')
-
 from .base import TaskDistributionStrategy, DistributionConfig, LoadBalanceMetric
 from models.message_group import (
     MessageGroupCollection,
@@ -23,7 +13,14 @@ from models.message_group import (
     MessageGroup
 )
 
-# logger 已在上面定义
+logger = logging.getLogger(__name__)
+
+# 简单的消息验证器
+class MessageValidator:
+    @staticmethod
+    def validate_message(message) -> bool:
+        """简单的消息验证"""
+        return message is not None and hasattr(message, 'id')
 
 
 class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):

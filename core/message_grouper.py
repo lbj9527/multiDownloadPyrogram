@@ -184,7 +184,7 @@ class MessageGrouper:
             if not message:
                 continue
             
-            if self._is_media_group_message(message):
+            if is_media_group_message(message):
                 # 媒体组消息
                 group_id = message.media_group_id
                 
@@ -211,9 +211,7 @@ class MessageGrouper:
         
         return collection
     
-    def _is_media_group_message(self, message: Any) -> bool:
-        """检查是否为媒体组消息"""
-        return is_media_group_message(message)
+    # 移除重复的媒体组检查函数 - 直接使用模块级函数
     
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

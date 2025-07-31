@@ -6,12 +6,9 @@
 import logging
 from typing import Dict, List, Any, Optional, Type
 
-# 简单的日志配置
-logger = logging.getLogger(__name__)
-
 from .base import (
-    TaskDistributionStrategy, 
-    DistributionConfig, 
+    TaskDistributionStrategy,
+    DistributionConfig,
     DistributionMode,
     DistributionValidator,
     DistributionMetrics
@@ -21,7 +18,7 @@ from .strategies import (
 )
 from models.message_group import MessageGroupCollection, TaskDistributionResult
 
-# logger 已在上面定义
+logger = logging.getLogger(__name__)
 
 
 class TaskDistributor:

@@ -20,6 +20,7 @@ from pyrogram.file_id import FileId, FileType
 import logging
 import psutil
 import threading
+import time
 
 # 导入主程序的分配组件
 from core.task_distribution import (
@@ -100,12 +101,11 @@ PROXY_CONFIG = {
 } if USE_PROXY else None
 DOWNLOAD_DIR = Path("downloads")
 
-# 调试选项
-ENABLE_SMART_DISTRIBUTION = False  # 暂时禁用智能分配，避免卡住
-ENABLE_QUICK_FALLBACK = True       # 启用快速回退
+# 调试选项 - 已移除无用的配置项
 # ==================== 配置区域结束 ====================
 
 def monitor_bandwidth():
+    """监控网络带宽使用情况"""
     old_stats = psutil.net_io_counters()
     while True:
         time.sleep(1)
@@ -817,7 +817,7 @@ class MultiClientDownloader:
 
             logger.info("✅ 使用并发获取 + 智能消息分配")
 
-            async def client_task(client, session_name, message_ids, pre_fetched_messages, index):
+            async def client_task(client, message_ids, pre_fetched_messages, index):
                 # 错开启动时间，避免同时连接
                 if index > 0:
                     delay_seconds = index * 0.5
@@ -834,7 +834,7 @@ class MultiClientDownloader:
                 session_name = SESSION_NAMES[i]
                 message_ids = client_message_mapping.get(session_name, [])
                 pre_fetched_messages = client_message_objects.get(session_name, []) if client_message_objects else []
-                task = client_task(client, session_name, message_ids, pre_fetched_messages, i)
+                task = client_task(client, message_ids, pre_fetched_messages, i)
                 tasks.append(task)
 
             # 等待所有任务完成
@@ -923,12 +923,12 @@ if __name__ == "__main__":
     logger.info(f"📝 日志文件位置: {log_file.absolute()}")
     logger.info("🗑️ 日志文件已清除，开始新的日志记录")
 
-    # 检查 TgCrypto
+    # 检查 TgCrypto - 简化版本
     try:
         import tgcrypto
-        logger.info("✅ TgCrypto 已启用，加密操作将被加速")
+        logger.info("✅ TgCrypto 已启用")
     except ImportError:
-        logger.warning("⚠️ TgCrypto 未安装，建议安装以提升性能: pip install tgcrypto")
+        logger.warning("⚠️ TgCrypto 未安装，建议安装: pip install tgcrypto")
 
     # 显示版本信息
     logger.info("🌊 使用 Pyrogram stream_media 方法进行流式下载")

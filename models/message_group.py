@@ -7,13 +7,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-# 内联常量定义（替代config.constants）
-MB = 1024 * 1024
-
-SUPPORTED_MEDIA_TYPES = [
-    'photo', 'video', 'document', 'audio', 'voice',
-    'video_note', 'animation', 'sticker'
-]
+# 移除未使用的常量定义
 
 
 @dataclass
@@ -30,12 +24,8 @@ class MessageGroup:
         """添加消息到组"""
         self.messages.append(message)
         self.total_files = len(self.messages)
-        # estimated_size 保持为0，程序中有真实大小计算
-    
-
-
-
-    
+        # 计算实际文件大小
+        self.estimated_size += self._get_message_file_size(message)
     @property
     def is_media_group(self) -> bool:
         """是否为媒体组"""
@@ -50,6 +40,22 @@ class MessageGroup:
         """返回消息数量"""
         return len(self.messages)
     
+    def _get_message_file_size(self, message: Any) -> int:
+        """获取消息文件大小（字节）"""
+        if not message:
+            return 0
+
+        # 检查所有可能的媒体类型
+        media_types = ['document', 'video', 'photo', 'audio', 'voice',
+                      'video_note', 'animation', 'sticker']
+
+        for media_type in media_types:
+            media = getattr(message, media_type, None)
+            if media and hasattr(media, 'file_size') and media.file_size:
+                return media.file_size
+
+        return 0
+
     def __str__(self) -> str:
         """字符串表示"""
         return f"MessageGroup(id={self.group_id}, type={self.group_type}, files={self.total_files})"
@@ -100,12 +106,15 @@ class MessageGroupCollection:
         total_files = sum(group.total_files for group in self.media_groups.values())
         total_files += len(self.single_messages)
 
+        # 计算总大小
+        total_size = sum(group.estimated_size for group in self.media_groups.values())
+
         return {
             "total_messages": self.total_messages,
             "total_files": total_files,
             "media_groups_count": self.total_media_groups,
             "single_messages_count": len(self.single_messages),
-            "estimated_total_size": 0,  # 保持字段兼容性，但值为0
+            "estimated_total_size": total_size,
             "average_group_size": total_files / max(self.total_media_groups, 1)
         }
 
@@ -124,7 +133,8 @@ class ClientTaskAssignment:
         self.message_groups.append(group)
         self.total_messages += len(group)
         self.total_files += group.total_files
-        # estimated_size 保持为0，程序中有真实大小计算
+        # 累加实际文件大小
+        self.estimated_size += group.estimated_size
     
     def get_all_messages(self) -> List[Any]:
         """获取所有消息"""
