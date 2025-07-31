@@ -32,9 +32,7 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
     async def distribute_tasks(
         self,
         message_collection: MessageGroupCollection,
-        client_names: List[str],
-        client=None,
-        channel: str = None
+        client_names: List[str]
     ) -> TaskDistributionResult:
         """媒体组感知的任务分配"""
 
@@ -45,11 +43,7 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
 
         result = TaskDistributionResult(distribution_strategy="MediaGroupAwareDistribution")
 
-        # 消息ID验证（如果启用且提供了客户端）
-        if (self.config.enable_message_id_validation and client and channel):
-            message_collection = await self._validate_and_filter_messages(
-                client, channel, message_collection
-            )
+        # 消息ID验证已在消息获取阶段完成，无需重复验证
 
         # 初始化客户端分配
         client_assignments = [
@@ -98,79 +92,7 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
         
         return loads.index(min(loads))
 
-    async def _validate_and_filter_messages(
-        self,
-        client,
-        channel: str,
-        message_collection: MessageGroupCollection
-    ) -> MessageGroupCollection:
-        """
-        验证并过滤无效的消息ID
 
-        Args:
-            client: Pyrogram客户端
-            channel: 频道名称
-            message_collection: 原始消息集合
-
-        Returns:
-            过滤后的消息集合
-        """
-        # 收集所有消息ID
-        all_message_ids = []
-
-        # 从媒体组收集消息ID
-        for group in message_collection.media_groups.values():
-            all_message_ids.extend(group.message_ids)
-
-        # 从单条消息收集消息ID
-        for message in message_collection.single_messages:
-            if hasattr(message, 'id'):
-                all_message_ids.append(message.id)
-
-        if not all_message_ids:
-            return message_collection
-
-        # 简化验证：假设所有消息ID都有效
-        # 在实际使用中，Pyrogram会处理无效的消息ID
-        valid_ids_set = set(all_message_ids)
-
-        # 创建新的消息集合
-        filtered_collection = MessageGroupCollection()
-
-        # 过滤媒体组
-        for group in message_collection.media_groups.values():
-            filtered_messages = [
-                msg for msg in group.messages
-                if hasattr(msg, 'id') and msg.id in valid_ids_set
-            ]
-
-            if filtered_messages:
-                # 创建过滤后的组
-                from models.message_group import MessageGroup
-                filtered_group = MessageGroup(
-                    group_id=group.group_id,
-                    group_type=group.group_type
-                )
-                filtered_group.messages = filtered_messages
-                filtered_group.total_files = len(filtered_messages)
-
-                # 重新计算估算大小
-                filtered_group.estimated_size = 0
-                for message in filtered_messages:
-                    filtered_group._update_estimated_size(message)
-
-                filtered_collection.add_media_group(filtered_group)
-
-        # 过滤单条消息
-        filtered_single_messages = [
-            msg for msg in message_collection.single_messages
-            if hasattr(msg, 'id') and msg.id in valid_ids_set
-        ]
-
-        for message in filtered_single_messages:
-            filtered_collection.add_single_message(message)
-
-        return filtered_collection
 
 
     def get_strategy_info(self) -> Dict[str, Any]:

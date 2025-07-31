@@ -55,9 +55,7 @@ class TaskDistributionStrategy(ABC):
     async def distribute_tasks(
         self,
         message_collection: MessageGroupCollection,
-        client_names: List[str],
-        client=None,
-        channel: str = None
+        client_names: List[str]
     ) -> TaskDistributionResult:
         """
         分配任务到客户端

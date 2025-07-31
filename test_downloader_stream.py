@@ -448,10 +448,10 @@ class MultiClientDownloader:
             # 使用类的配置（避免重复配置）
             distribution_config = self.distribution_config
 
-            # 执行任务分配（使用第一个客户端进行验证）
+            # 执行任务分配
             task_distributor = TaskDistributor(distribution_config)
             distribution_result = await task_distributor.distribute_tasks(
-                message_collection, SESSION_NAMES, client=clients[0], channel=TARGET_CHANNEL
+                message_collection, SESSION_NAMES
             )
 
             # 4. 转换为客户端消息ID映射和消息对象映射

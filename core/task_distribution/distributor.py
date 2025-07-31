@@ -44,9 +44,7 @@ class TaskDistributor:
         self,
         message_collection: MessageGroupCollection,
         client_names: List[str],
-        strategy_mode: Optional[DistributionMode] = None,
-        client=None,
-        channel: str = None
+        strategy_mode: Optional[DistributionMode] = None
     ) -> TaskDistributionResult:
         """
         分配任务
@@ -70,7 +68,7 @@ class TaskDistributor:
         try:
             # 执行分配
             result = await strategy.distribute_tasks(
-                message_collection, client_names, client, channel
+                message_collection, client_names
             )
             
             # 验证结果
