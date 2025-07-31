@@ -297,33 +297,123 @@ class MultiClientDownloader:
             current_start = current_end + 1
         return ranges
 
-    async def smart_distribute_messages(self, client: Client) -> Tuple[Dict[str, List[int]], Dict[str, List[Any]], Dict[str, Any]]:
+    async def parallel_fetch_messages(self, clients: List[Client]) -> List[Any]:
         """
-        智能消息分配 - 使用媒体组感知算法 + 消息验证
+        并发获取消息 - 多客户端分工获取不同范围的消息
+
+        Args:
+            clients: 客户端列表
+
+        Returns:
+            所有获取到的消息列表
+        """
+        logger.info(f"🚀 使用 {len(clients)} 个客户端并发获取消息...")
+
+        # 将消息范围按客户端数量分配
+        all_message_ids = list(range(START_MESSAGE_ID, END_MESSAGE_ID + 1))
+        client_count = len(clients)
+
+        # 计算每个客户端的消息范围
+        messages_per_client = len(all_message_ids) // client_count
+        remainder = len(all_message_ids) % client_count
+
+        ranges = []
+        start_idx = 0
+        for i in range(client_count):
+            extra = 1 if i < remainder else 0
+            end_idx = start_idx + messages_per_client + extra
+            ranges.append(all_message_ids[start_idx:end_idx])
+            logger.info(f"客户端{i+1} 分配消息范围: {all_message_ids[start_idx]} - {all_message_ids[end_idx-1]} ({len(ranges[i])} 条)")
+            start_idx = end_idx
+
+        async def fetch_range(client, message_ids, client_index):
+            """单个客户端获取指定范围的消息"""
+            # 错开启动时间避免同时发起请求
+            if client_index > 0:
+                delay = client_index * 0.2
+                logger.info(f"客户端{client_index+1} 将在 {delay} 秒后开始获取...")
+                await asyncio.sleep(delay)
+
+            messages = []
+            batch_size = 100  # 每批获取100条消息
+
+            logger.info(f"客户端{client_index+1} 开始获取 {len(message_ids)} 条消息...")
+
+            for i in range(0, len(message_ids), batch_size):
+                batch_ids = message_ids[i:i + batch_size]
+                try:
+                    batch_messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
+                    messages.extend(batch_messages)
+                    logger.info(f"客户端{client_index+1} 已获取 {len(messages)}/{len(message_ids)} 条消息")
+
+                    # 短暂延迟避免过于频繁的请求
+                    await asyncio.sleep(0.1)
+
+                except FloodWait as e:
+                    logger.warning(f"客户端{client_index+1} 遇到限流，等待 {e.value} 秒")
+                    await asyncio.sleep(float(e.value))
+                    # 重试当前批次
+                    try:
+                        batch_messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
+                        messages.extend(batch_messages)
+                        logger.info(f"客户端{client_index+1} 重试成功，已获取 {len(messages)}/{len(message_ids)} 条消息")
+                    except Exception as retry_e:
+                        logger.error(f"客户端{client_index+1} 重试失败: {retry_e}")
+
+                except Exception as e:
+                    logger.error(f"客户端{client_index+1} 获取消息批次 {batch_ids[0]}-{batch_ids[-1]} 失败: {e}")
+                    continue
+
+            logger.info(f"✅ 客户端{client_index+1} 完成获取，共 {len(messages)} 条有效消息")
+            return messages
+
+        # 启动所有客户端并发获取
+        tasks = []
+        for i, client in enumerate(clients):
+            task = fetch_range(client, ranges[i], i)
+            tasks.append(task)
+
+        # 等待所有任务完成
+        logger.info("⏳ 等待所有客户端完成消息获取...")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # 合并所有消息
+        all_messages = []
+        successful_clients = 0
+
+        for i, result in enumerate(results):
+            if isinstance(result, list):
+                all_messages.extend(result)
+                successful_clients += 1
+                logger.info(f"✅ 客户端{i+1} 成功获取 {len(result)} 条消息")
+            else:
+                logger.error(f"❌ 客户端{i+1} 获取消息失败: {result}")
+
+        # 按消息ID排序确保顺序正确
+        all_messages = sorted([msg for msg in all_messages if msg], key=lambda x: x.id)
+
+        logger.info(f"🎉 并发获取完成！{successful_clients}/{len(clients)} 个客户端成功，共获取 {len(all_messages)} 条有效消息")
+        return all_messages
+
+    async def smart_distribute_messages(self, clients: List[Client]) -> Tuple[Dict[str, List[int]], Dict[str, List[Any]], Dict[str, Any]]:
+        """
+        智能消息分配 - 并发获取 + 媒体组感知算法 + 消息验证
+
+        Args:
+            clients: 客户端列表（用于并发获取）
 
         Returns:
             Tuple[Dict[client_name, List[message_ids]], Dict[client_name, List[message_objects]], validation_stats] - 分配结果、消息对象和验证统计
         """
-        logger.info("🧠 开始智能消息分配（带验证）...")
+        logger.info("🧠 开始智能消息分配（并发获取 + 智能分配）...")
 
         try:
-            # 1. 批量获取所有消息对象
-            logger.info(f"📦 获取消息范围 {START_MESSAGE_ID}-{END_MESSAGE_ID} 的消息对象...")
-            all_message_ids = list(range(START_MESSAGE_ID, END_MESSAGE_ID + 1))
+            # 1. 并发获取所有消息对象
+            logger.info(f"📦 使用 {len(clients)} 个客户端并发获取消息范围 {START_MESSAGE_ID}-{END_MESSAGE_ID}...")
+            all_messages = await self.parallel_fetch_messages(clients)
 
-            # 分批获取消息以避免超时
-            batch_size = 100
-            all_messages = []
-
-            for i in range(0, len(all_message_ids), batch_size):
-                batch_ids = all_message_ids[i:i + batch_size]
-                try:
-                    messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
-                    all_messages.extend(messages)
-                    logger.info(f"已获取 {len(all_messages)}/{len(all_message_ids)} 条消息")
-                except Exception as e:
-                    logger.warning(f"获取消息批次 {batch_ids[0]}-{batch_ids[-1]} 失败: {e}")
-                    continue
+            if not all_messages:
+                raise ValueError("未能获取到任何有效消息")
 
             # 2. 使用主程序的分组方法（避免消息转换过程中的信息丢失）
             logger.info("🧠 使用主程序的MessageGrouper进行分组...")
@@ -348,10 +438,10 @@ class MultiClientDownloader:
             # 使用类的配置（避免重复配置）
             distribution_config = self.distribution_config
 
-            # 执行任务分配
+            # 执行任务分配（使用第一个客户端进行验证）
             task_distributor = TaskDistributor(distribution_config)
             distribution_result = await task_distributor.distribute_tasks(
-                message_collection, SESSION_NAMES, client=client, channel=TARGET_CHANNEL
+                message_collection, SESSION_NAMES, client=clients[0], channel=TARGET_CHANNEL
             )
 
             # 4. 转换为客户端消息ID映射和消息对象映射
@@ -627,10 +717,12 @@ class MultiClientDownloader:
         }
 
     async def run_download(self):
-        """运行下载任务 - 支持智能分配和简单分配"""
-        logger.info("🚀 开始多客户端消息下载验证 - Stream Media 版本 + 智能分配")
+        """运行下载任务 - 支持并发获取 + 智能分配和简单分配"""
+        logger.info("🚀 开始多客户端消息下载验证 - Stream Media + 并发获取 + 智能分配版本")
         logger.info(f"目标频道: {TARGET_CHANNEL}")
         logger.info(f"消息范围: {START_MESSAGE_ID} - {END_MESSAGE_ID} (共 {TOTAL_MESSAGES} 条)")
+        logger.info(f"客户端数量: {len(SESSION_NAMES)} 个")
+        logger.info("💡 新特性: 多客户端并发获取消息，减少API限流风险")
 
         clients = self.create_clients()
         self.stats["start_time"] = time.time()
@@ -644,13 +736,35 @@ class MultiClientDownloader:
 
             if use_smart_distribution:
                 try:
-                    # 使用第一个客户端进行消息分析
-                    first_client = clients[0]
-                    async with first_client:
-                        client_message_mapping, client_message_objects, validation_stats = await self.smart_distribute_messages(first_client)
-                    logger.info("✅ 使用智能消息分配")
+                    # 使用所有客户端进行并发消息获取和智能分配
+                    logger.info("🚀 启动并发获取 + 智能分配模式")
+
+                    # 先连接所有客户端用于消息获取
+                    connected_clients = []
+                    for i, client in enumerate(clients):
+                        try:
+                            await client.start()
+                            connected_clients.append(client)
+                            logger.info(f"✅ 客户端{i+1} 连接成功")
+                        except Exception as e:
+                            logger.warning(f"⚠️ 客户端{i+1} 连接失败: {e}")
+
+                    if not connected_clients:
+                        raise ValueError("没有可用的客户端")
+
+                    # 使用连接的客户端进行并发获取和智能分配
+                    client_message_mapping, client_message_objects, validation_stats = await self.smart_distribute_messages(connected_clients)
+
+                    # 断开客户端连接（稍后会重新连接用于下载）
+                    for client in connected_clients:
+                        try:
+                            await client.stop()
+                        except:
+                            pass
+
+                    logger.info("✅ 使用并发获取 + 智能消息分配")
                 except Exception as e:
-                    logger.warning(f"智能分配失败，回退到简单分配: {e}")
+                    logger.warning(f"并发智能分配失败，回退到简单分配: {e}")
                     use_smart_distribution = False
 
             if not use_smart_distribution or not client_message_mapping:
@@ -708,19 +822,25 @@ class MultiClientDownloader:
 
         # 输出详细统计信息
         logger.info("\n" + "="*60)
-        logger.info("📊 Stream Media + 智能分配 下载结果统计")
+        logger.info("📊 Stream Media + 并发获取 + 智能分配 下载结果统计")
         logger.info("="*60)
 
         # 显示验证统计（如果有）
         if validation_stats and validation_stats.get("enabled"):
-            logger.info("🔍 消息验证统计:")
+            if validation_stats.get("parallel_fetch"):
+                logger.info("� 并发获取统计:")
+                logger.info(f"  使用客户端数: {len(SESSION_NAMES)} 个")
+                logger.info(f"  并发获取模式: ✅ 启用")
+                logger.info("-" * 60)
+
+            logger.info("�🔍 消息验证统计:")
             logger.info(f"  原始消息数: {validation_stats['original_count']}")
             logger.info(f"  有效消息数: {validation_stats['valid_count']}")
             logger.info(f"  无效消息数: {validation_stats['invalid_count']}")
             logger.info(f"  验证通过率: {validation_stats['validation_rate']:.1%}")
             logger.info("-" * 60)
         elif validation_stats and validation_stats.get("fallback"):
-            logger.info("⚠️ 使用简单分配模式（智能分配失败）")
+            logger.info("⚠️ 使用简单分配模式（并发智能分配失败）")
             logger.info(f"  失败原因: {validation_stats.get('reason', '未知')}")
             logger.info("-" * 60)
 
@@ -777,6 +897,8 @@ if __name__ == "__main__":
 
     # 显示版本信息
     logger.info("🌊 使用 Pyrogram stream_media 方法进行流式下载")
-    logger.info("💡 优势: 内存效率高、自动数据中心选择、内置错误处理")
+    logger.info("� 新增: 多客户端并发获取消息，减少API限流")
+    logger.info("🧠 集成: 智能媒体组感知分配算法")
+    logger.info("�💡 优势: 内存效率高、自动数据中心选择、内置错误处理、并发加速")
 
     asyncio.run(main())
