@@ -337,8 +337,16 @@ class MultiClientDownloader:
                 batch_ids = message_ids[i:i + batch_size]
                 try:
                     batch_messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
-                    messages.extend(batch_messages)
-                    logger.info(f"客户端{client_index+1} 已获取 {len(messages)}/{len(message_ids)} 条消息")
+                    # 过滤掉无效消息（使用empty属性判断）
+                    valid_messages = [msg for msg in batch_messages if msg is not None and not getattr(msg, 'empty', True)]
+                    invalid_count = len(batch_ids) - len(valid_messages)
+
+                    messages.extend(valid_messages)
+
+                    if invalid_count > 0:
+                        logger.warning(f"客户端{client_index+1} 批次中发现 {invalid_count} 条无效消息")
+
+                    logger.info(f"客户端{client_index+1} 已获取 {len(messages)} 条有效消息（批次: {len(valid_messages)}/{len(batch_ids)}）")
 
                     # 短暂延迟避免过于频繁的请求
                     await asyncio.sleep(0.1)
@@ -349,8 +357,16 @@ class MultiClientDownloader:
                     # 重试当前批次
                     try:
                         batch_messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
-                        messages.extend(batch_messages)
-                        logger.info(f"客户端{client_index+1} 重试成功，已获取 {len(messages)}/{len(message_ids)} 条消息")
+                        # 过滤掉无效消息（使用empty属性判断）
+                        valid_messages = [msg for msg in batch_messages if msg is not None and not getattr(msg, 'empty', True)]
+                        invalid_count = len(batch_ids) - len(valid_messages)
+
+                        messages.extend(valid_messages)
+
+                        if invalid_count > 0:
+                            logger.warning(f"客户端{client_index+1} 重试批次中发现 {invalid_count} 条无效消息")
+
+                        logger.info(f"客户端{client_index+1} 重试成功，已获取 {len(messages)} 条有效消息")
                     except Exception as retry_e:
                         logger.error(f"客户端{client_index+1} 重试失败: {retry_e}")
 
@@ -383,8 +399,8 @@ class MultiClientDownloader:
             else:
                 logger.error(f"❌ 客户端{i+1} 获取消息失败: {result}")
 
-        # 按消息ID排序确保顺序正确
-        all_messages = sorted([msg for msg in all_messages if msg], key=lambda x: x.id)
+        # 按消息ID排序确保顺序正确，同时过滤掉无效消息
+        all_messages = sorted([msg for msg in all_messages if msg and not getattr(msg, 'empty', True)], key=lambda x: x.id)
 
         logger.info(f"🎉 并发获取完成！{successful_clients}/{len(clients)} 个客户端成功，共获取 {len(all_messages)} 条有效消息")
         return all_messages

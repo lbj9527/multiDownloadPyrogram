@@ -4,15 +4,39 @@
 """
 
 import asyncio
-from typing import List, Dict, Any, Optional, Tuple
+import time
+from functools import wraps
+from typing import List, Dict, Any
 from pyrogram import Client
 from pyrogram.errors import FloodWait
 
+import logging
 from models.message_group import MessageGroup, MessageGroupCollection
-from utils import get_logger, retry_async
-from .media_group_utils import MediaGroupUtils
 
-logger = get_logger(__name__)
+# 简单的日志配置
+logger = logging.getLogger(__name__)
+
+# 简单的重试装饰器
+def retry_async(max_retries=3, delay=1.0):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    logger.warning(f"重试 {func.__name__} (尝试 {attempt + 1}/{max_retries}): {e}")
+                    await asyncio.sleep(delay * (2 ** attempt))
+            return None
+        return wrapper
+    return decorator
+
+# 简单的媒体组检查函数
+def is_media_group_message(message) -> bool:
+    """检查是否为媒体组消息"""
+    return hasattr(message, 'media_group_id') and message.media_group_id is not None
 
 
 class MessageGrouper:
@@ -189,7 +213,7 @@ class MessageGrouper:
     
     def _is_media_group_message(self, message: Any) -> bool:
         """检查是否为媒体组消息"""
-        return MediaGroupUtils.is_media_group_message(message)
+        return is_media_group_message(message)
     
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

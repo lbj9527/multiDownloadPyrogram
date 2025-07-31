@@ -3,8 +3,11 @@
 统一管理不同的分配策略
 """
 
+import logging
 from typing import Dict, List, Any, Optional, Type
-from utils import get_logger
+
+# 简单的日志配置
+logger = logging.getLogger(__name__)
 
 from .base import (
     TaskDistributionStrategy, 
@@ -18,7 +21,7 @@ from .strategies import (
 )
 from models.message_group import MessageGroupCollection, TaskDistributionResult
 
-logger = get_logger(__name__)
+# logger 已在上面定义
 
 
 class TaskDistributor:
