@@ -1,7 +1,8 @@
 """
 三客户端消息下载验证程序 - Stream Media 版本
-核心功能：消息范围分片、异步任务管理、TgCrypto加速、流式下载
+核心功能：智能消息分配、异步任务管理、TgCrypto加速、流式下载
 使用 Pyrogram 的 stream_media 方法进行高效流式下载
+支持基于文件大小和类型的智能下载方法选择
 
 注意：此文件使用硬编码配置，请在配置区域修改相关参数
 """
@@ -288,21 +289,7 @@ class MultiClientDownloader:
         except Exception as e:
             logger.error(f"保存文本消息失败: {e}")
 
-    def calculate_message_ranges(self) -> List[Tuple[int, int]]:
-        """计算消息范围分片（简单模式，保留向后兼容）"""
-        client_count = len(SESSION_NAMES)
-        messages_per_client = TOTAL_MESSAGES // client_count
-        remainder = TOTAL_MESSAGES % client_count
-        ranges = []
-        current_start = START_MESSAGE_ID
-        for i in range(client_count):
-            extra = 1 if i < remainder else 0
-            messages_for_this_client = messages_per_client + extra
-            current_end = current_start + messages_for_this_client - 1
-            ranges.append((current_start, current_end))
-            logger.info(f"客户端 {i+1} 分配范围: {current_start} - {current_end} ({messages_for_this_client} 条消息)")
-            current_start = current_end + 1
-        return ranges
+
 
     async def parallel_fetch_messages(self, clients: List[Client]) -> List[Any]:
         """
@@ -493,25 +480,8 @@ class MultiClientDownloader:
 
         except Exception as e:
             logger.error(f"❌ 智能消息分配失败: {e}")
-            logger.info("🔄 回退到简单范围分配...")
-
-            # 回退到简单范围分配
-            ranges = self.calculate_message_ranges()
-            client_message_mapping = {}
-            client_message_objects = {}
-            for i, (start_id, end_id) in enumerate(ranges):
-                client_name = SESSION_NAMES[i]
-                message_ids = list(range(start_id, end_id + 1))
-                client_message_mapping[client_name] = message_ids
-                client_message_objects[client_name] = []  # 空列表，需要重新获取
-
-            fallback_stats = {
-                "enabled": False,
-                "fallback": True,
-                "reason": str(e)
-            }
-
-            return client_message_mapping, client_message_objects, fallback_stats
+            # 重新抛出异常，不再回退
+            raise
 
     def is_video_file(self, message) -> bool:
         """检查消息是否为视频文件"""
@@ -694,10 +664,7 @@ class MultiClientDownloader:
             logger.error(f"下载消息 {message.id} 失败: {e}")
             return None
 
-    async def download_messages_range(self, client: Client, start_id: int, end_id: int, client_index: int) -> Dict:
-        """下载指定范围的消息（兼容模式）"""
-        message_ids = list(range(start_id, end_id + 1))
-        return await self.download_messages_by_ids(client, message_ids, client_index)
+
 
     async def download_messages_by_ids(self, client: Client, message_ids: List[int], client_index: int,
                                       pre_fetched_messages: Optional[List[Any]] = None) -> Dict:
@@ -772,66 +739,7 @@ class MultiClientDownloader:
                     # 短暂延迟，避免过于频繁的请求
                     await asyncio.sleep(0.1)
 
-            else:
-                # 回退到原来的批量获取逻辑
-                logger.info(f"{client_name} 没有预获取消息，使用批量获取模式")
-                batch_size = 50
 
-                for i in range(0, len(message_ids), batch_size):
-                    batch_ids = message_ids[i:i + batch_size]
-
-                    try:
-                        messages = await client.get_messages(TARGET_CHANNEL, batch_ids)
-
-                        for message in messages:
-                            if message and hasattr(message, 'media') and message.media:
-                                # 获取文件大小信息
-                                file_size = getattr(getattr(message, 'document', None), 'file_size', 0) or \
-                                            getattr(getattr(message, 'video', None), 'file_size', 0) or \
-                                            getattr(getattr(message, 'photo', None), 'file_size', 0) or 0
-
-                                logger.info(f"{client_name} 消息 {message.id} 文件大小: {file_size / 1024 / 1024:.2f} MB")
-
-                                try:
-                                    is_media_group = self.is_media_group_message(message)
-                                    if is_media_group:
-                                        logger.info(f"{client_name} 检测到媒体组消息: {message.id} (组ID: {message.media_group_id})")
-
-                                    file_path = await self.download_media_file(client, message)
-
-                                    if file_path:
-                                        downloaded += 1
-                                        if is_media_group:
-                                            logger.info(f"{client_name} 媒体组文件下载成功: {file_path.name}")
-                                        else:
-                                            logger.info(f"{client_name} 下载成功: {file_path.name}")
-                                    else:
-                                        failed += 1
-
-                                except Exception as e:
-                                    failed += 1
-                                    logger.error(f"{client_name} 下载消息 {message.id} 失败: {e}")
-                            else:
-                                # 处理文本消息
-                                if message:
-                                    await self.save_text_message(message)
-                                    downloaded += 1
-
-                        # 更新统计信息
-                        self.stats["downloaded"] += len([m for m in messages if m])
-                        progress = (downloaded + failed) / len(message_ids) * 100
-                        logger.info(f"{client_name} 进度: {progress:.1f}% ({downloaded} 成功, {failed} 失败)")
-
-                    except FloodWait as e:
-                        logger.warning(f"{client_name} 遇到限流，等待 {e.value} 秒")
-                        await asyncio.sleep(float(e.value))
-
-                    except Exception as e:
-                        logger.error(f"{client_name} 批量获取消息失败: {e}")
-                        failed += len(batch_ids)
-
-                    # 短暂延迟，避免过于频繁的请求
-                    await asyncio.sleep(0.2)
 
         except Exception as e:
             logger.error(f"{client_name} 下载任务失败: {e}")
@@ -846,7 +754,7 @@ class MultiClientDownloader:
         }
 
     async def run_download(self):
-        """运行下载任务 - 支持并发获取 + 智能分配和简单分配"""
+        """运行下载任务 - 智能消息分配 + 并发获取"""
         logger.info("🚀 开始多客户端消息下载验证 - Stream Media + 并发获取 + 智能分配版本")
         logger.info(f"目标频道: {TARGET_CHANNEL}")
         logger.info(f"消息范围: {START_MESSAGE_ID} - {END_MESSAGE_ID} (共 {TOTAL_MESSAGES} 条)")
@@ -857,60 +765,37 @@ class MultiClientDownloader:
         self.stats["start_time"] = time.time()
 
         try:
-            # 尝试使用智能分配
-            use_smart_distribution = True
-            client_message_mapping = None
-            client_message_objects = None
-            validation_stats = None
+            # 使用智能分配
+            logger.info("🚀 启动并发获取 + 智能分配模式")
 
-            if use_smart_distribution:
+            # 先连接所有客户端用于消息获取（添加超时处理）
+            connected_clients = []
+            for i, client in enumerate(clients):
                 try:
-                    # 使用所有客户端进行并发消息获取和智能分配
-                    logger.info("🚀 启动并发获取 + 智能分配模式")
-
-                    # 先连接所有客户端用于消息获取（添加超时处理）
-                    connected_clients = []
-                    for i, client in enumerate(clients):
-                        try:
-                            logger.info(f"🔄 正在连接客户端{i+1}...")
-                            # 添加超时处理，避免无限等待
-                            await asyncio.wait_for(client.start(), timeout=30.0)
-                            connected_clients.append(client)
-                            logger.info(f"✅ 客户端{i+1} 连接成功")
-                        except asyncio.TimeoutError:
-                            logger.warning(f"⚠️ 客户端{i+1} 连接超时（30秒）")
-                        except Exception as e:
-                            logger.warning(f"⚠️ 客户端{i+1} 连接失败: {e}")
-
-                    if not connected_clients:
-                        raise ValueError("没有可用的客户端")
-
-                    # 使用连接的客户端进行并发获取和智能分配
-                    client_message_mapping, client_message_objects, validation_stats = await self.smart_distribute_messages(connected_clients)
-
-                    # 断开客户端连接（稍后会重新连接用于下载）
-                    for client in connected_clients:
-                        try:
-                            await client.stop()
-                        except:
-                            pass
-
-                    logger.info("✅ 使用并发获取 + 智能消息分配")
+                    logger.info(f"🔄 正在连接客户端{i+1}...")
+                    # 添加超时处理，避免无限等待
+                    await asyncio.wait_for(client.start(), timeout=30.0)
+                    connected_clients.append(client)
+                    logger.info(f"✅ 客户端{i+1} 连接成功")
+                except asyncio.TimeoutError:
+                    logger.warning(f"⚠️ 客户端{i+1} 连接超时（30秒）")
                 except Exception as e:
-                    logger.warning(f"并发智能分配失败，回退到简单分配: {e}")
-                    use_smart_distribution = False
+                    logger.warning(f"⚠️ 客户端{i+1} 连接失败: {e}")
 
-            if not use_smart_distribution or not client_message_mapping:
-                # 回退到简单范围分配
-                logger.info("🔄 使用简单范围分配")
-                message_ranges = self.calculate_message_ranges()
-                client_message_mapping = {}
-                client_message_objects = {}
-                for i, (start_id, end_id) in enumerate(message_ranges):
-                    session_name = SESSION_NAMES[i]
-                    message_ids = list(range(start_id, end_id + 1))
-                    client_message_mapping[session_name] = message_ids
-                    client_message_objects[session_name] = []  # 空列表，需要重新获取
+            if not connected_clients:
+                raise ValueError("没有可用的客户端")
+
+            # 使用连接的客户端进行并发获取和智能分配
+            client_message_mapping, client_message_objects, validation_stats = await self.smart_distribute_messages(connected_clients)
+
+            # 断开客户端连接（稍后会重新连接用于下载）
+            for client in connected_clients:
+                try:
+                    await client.stop()
+                except:
+                    pass
+
+            logger.info("✅ 使用并发获取 + 智能消息分配")
 
             async def client_task(client, session_name, message_ids, pre_fetched_messages, index):
                 # 错开启动时间，避免同时连接
@@ -972,10 +857,7 @@ class MultiClientDownloader:
             logger.info(f"  无效消息数: {validation_stats['invalid_count']}")
             logger.info(f"  验证通过率: {validation_stats['validation_rate']:.1%}")
             logger.info("-" * 60)
-        elif validation_stats and validation_stats.get("fallback"):
-            logger.info("⚠️ 使用简单分配模式（并发智能分配失败）")
-            logger.info(f"  失败原因: {validation_stats.get('reason', '未知')}")
-            logger.info("-" * 60)
+
 
         for result in client_results:
             range_info = result.get('range', 'unknown')
@@ -1030,8 +912,9 @@ if __name__ == "__main__":
 
     # 显示版本信息
     logger.info("🌊 使用 Pyrogram stream_media 方法进行流式下载")
-    logger.info("� 新增: 多客户端并发获取消息，减少API限流")
-    logger.info("🧠 集成: 智能媒体组感知分配算法")
-    logger.info("�💡 优势: 内存效率高、自动数据中心选择、内置错误处理、并发加速")
+    logger.info("🚀 特性: 多客户端并发获取消息，减少API限流")
+    logger.info("🧠 核心: 智能媒体组感知分配算法")
+    logger.info("⚡ 智能: 基于文件大小和类型的下载方法选择")
+    logger.info("💡 优势: 内存效率高、自动数据中心选择、内置错误处理、并发加速")
 
     asyncio.run(main())
