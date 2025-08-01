@@ -475,6 +475,40 @@ class MultiClientDownloader:
             logger.info(f"  总消息数: {distribution_result.total_messages}")
             logger.info(f"  总文件数: {distribution_result.total_files}")
             logger.info(f"  客户端数量: {load_balance_stats['clients_count']}")
+
+            # 打印每个客户端分配到的完整消息ID
+            for i, client_name in enumerate(SESSION_NAMES):
+                if client_name in client_message_mapping:
+                    message_ids = client_message_mapping[client_name]
+                    if message_ids:
+                        # 排序消息ID以便查看
+                        sorted_ids = sorted(message_ids)
+                        id_ranges = []
+
+                        # 将连续的ID合并为范围显示
+                        start = sorted_ids[0]
+                        end = sorted_ids[0]
+
+                        for msg_id in sorted_ids[1:]:
+                            if msg_id == end + 1:
+                                end = msg_id
+                            else:
+                                if start == end:
+                                    id_ranges.append(str(start))
+                                else:
+                                    id_ranges.append(f"{start}-{end}")
+                                start = end = msg_id
+
+                        # 添加最后一个范围
+                        if start == end:
+                            id_ranges.append(str(start))
+                        else:
+                            id_ranges.append(f"{start}-{end}")
+
+                        logger.info(f"  客户端{i+1} 分配消息ID: {', '.join(id_ranges)} (共{len(message_ids)}条)")
+                    else:
+                        logger.info(f"  客户端{i+1} 分配消息ID: 无 (共0条)")
+
             logger.info(f"  文件分布: {load_balance_stats['file_distribution']}")
             logger.info(f"  大小分布: {[f'{size/(1024*1024):.2f} MB' for size in load_balance_stats['size_distribution']]}")
             logger.info(f"  文件均衡比例: {load_balance_stats['file_balance_ratio']:.3f}")
