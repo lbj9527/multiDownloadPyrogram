@@ -84,9 +84,9 @@ logger = logging.getLogger(__name__)
 API_ID = 25098445
 API_HASH = "cc2fa5a762621d306d8de030614e4555"
 PHONE_NUMBER = "+8618758361347"
-TARGET_CHANNEL = "@csdkl"
-START_MESSAGE_ID = 72710
-END_MESSAGE_ID = 72850
+TARGET_CHANNEL = "@zbzwx"
+START_MESSAGE_ID = 37802
+END_MESSAGE_ID = 37835
 TOTAL_MESSAGES = END_MESSAGE_ID - START_MESSAGE_ID + 1
 SESSION_NAMES = [
     "client_8618758361347_1",
@@ -133,7 +133,7 @@ class MultiClientDownloader:
         # 初始化智能消息分配器（完整配置，与main.py程序保持一致）
         self.distribution_config = DistributionConfig(
             mode=DistributionMode.MEDIA_GROUP_AWARE,  # 使用媒体组感知分配
-            load_balance_metric=LoadBalanceMetric.FILE_COUNT,  # 使用FILE_COUNT测试主程序方法
+            load_balance_metric=LoadBalanceMetric.ESTIMATED_SIZE,  # 使用FILE_COUNT测试主程序方法
             max_imbalance_ratio=0.3,  # 最大不均衡比例30%
             prefer_large_groups_first=True,  # 优先分配大媒体组
             enable_validation=True,  # 启用基本验证
@@ -573,9 +573,31 @@ class MultiClientDownloader:
                     thumb_size=file_id_obj.thumbnail_size or ''
                 )
 
-            # 分片下载
+            # 处理数据中心迁移和分片下载
             offset = 0
             chunk_size = 1024 * 1024  # 1MB，Telegram API 最大值
+
+            # 检查文件的数据中心ID
+            dc_id = file_id_obj.dc_id
+            current_dc_id = await client.storage.dc_id()
+
+            # 如果文件在不同的数据中心，需要特殊处理
+            if dc_id != current_dc_id:
+                logger.info(f"消息 {message.id} 文件位于数据中心 {dc_id}，当前连接到 {current_dc_id}")
+                # 使用 Pyrogram 的内置下载方法处理数据中心迁移
+                try:
+                    downloaded_path = await client.download_media(message, file_name=str(file_path))
+                    if downloaded_path:
+                        logger.info(f"✅ 使用内置方法下载完成: {downloaded_path}")
+                        return Path(downloaded_path)
+                    else:
+                        logger.error(f"❌ 内置方法下载失败")
+                        return None
+                except Exception as e:
+                    logger.error(f"❌ 内置方法下载异常: {e}")
+                    return None
+
+            # 如果在同一数据中心，使用 RAW API 下载
             try:
                 with open(file_path, 'wb') as f:
                     while offset < file_size or file_size == 0:
