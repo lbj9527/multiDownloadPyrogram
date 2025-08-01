@@ -15,12 +15,7 @@ from models.message_group import (
 
 logger = logging.getLogger(__name__)
 
-# 简单的消息验证器
-class MessageValidator:
-    @staticmethod
-    def validate_message(message) -> bool:
-        """简单的消息验证"""
-        return message is not None and hasattr(message, 'id')
+
 
 
 class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
@@ -34,9 +29,12 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
         """媒体组感知的任务分配"""
 
         # 验证输入
-        errors = self.validate_inputs(message_collection, client_names)
-        if errors:
-            raise ValueError(f"输入验证失败: {errors}")
+        if not client_names:
+            raise ValueError("客户端列表不能为空")
+        if message_collection.total_messages == 0:
+            raise ValueError("消息集合为空")
+        if len(client_names) != len(set(client_names)):
+            raise ValueError("客户端名称列表包含重复项")
 
         result = TaskDistributionResult(distribution_strategy="MediaGroupAwareDistribution")
 

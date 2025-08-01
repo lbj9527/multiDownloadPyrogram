@@ -137,16 +137,12 @@ class MultiClientDownloader:
         }
         self._results_processed = False  # 防止重复输出统计信息
 
-        # 初始化智能消息分配器（完整配置，与main.py程序保持一致）
+        # 初始化智能消息分配器（简化配置）
         self.distribution_config = DistributionConfig(
             mode=DistributionMode.MEDIA_GROUP_AWARE,  # 使用媒体组感知分配
             load_balance_metric=LoadBalanceMetric.ESTIMATED_SIZE,  # 使用真实文件大小进行负载均衡
-            max_imbalance_ratio=0.3,  # 最大不均衡比例30%
             prefer_large_groups_first=True,  # 优先分配大媒体组
-            enable_validation=True,  # 启用基本验证
-            enable_message_id_validation=True,  # 启用消息ID验证
-            custom_weights={},  # 自定义权重（可扩展）
-            client_preferences={}  # 客户端偏好（可扩展）
+            enable_validation=True  # 启用基本验证
         )
 
     def create_clients(self) -> List[Client]:
