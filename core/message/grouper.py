@@ -1,7 +1,6 @@
 """
 消息分组器
-负责从Telegram获取消息并按媒体组进行分组
-重构：移动到core/message/目录
+从core/message_grouper.py移动而来，保持原有功能不变
 """
 
 from typing import List, Dict, Any
@@ -17,7 +16,7 @@ def is_media_group_message(message) -> bool:
     return hasattr(message, 'media_group_id') and message.media_group_id is not None
 
 
-class MessageGrouper:
+class MessageGrouper(LoggerMixin):
     """消息分组器"""
     
     def __init__(self):
@@ -33,14 +32,14 @@ class MessageGrouper:
         Returns:
             消息组集合
         """
-        logger.info(f"开始分析 {len(messages)} 条消息的媒体组")
+        self.log_info(f"开始分析 {len(messages)} 条消息的媒体组")
 
         # 直接使用现有的分组逻辑
         collection = self._group_messages(messages)
 
         # 记录统计信息
         stats = collection.get_statistics()
-        logger.info(f"媒体组分析完成: {stats['media_groups_count']} 个媒体组, {stats['single_messages_count']} 条单独消息")
+        self.log_info(f"媒体组分析完成: {stats['media_groups_count']} 个媒体组, {stats['single_messages_count']} 条单独消息")
 
         return collection
 
@@ -73,6 +72,6 @@ class MessageGrouper:
             collection.add_media_group(group)
         
 
-        logger.info(f"发现 {len(media_groups_dict)} 个媒体组，{len(collection.single_messages)} 条单消息")
+        self.log_info(f"发现 {len(media_groups_dict)} 个媒体组，{len(collection.single_messages)} 条单消息")
 
         return collection

@@ -36,19 +36,25 @@ class MessageGroup:
     
     def _get_message_file_size(self, message: Any) -> int:
         """获取消息的真实文件大小（字节）"""
-        if not message:
+        # 使用utils.file_utils中的方法保持一致性
+        try:
+            from utils.file_utils import FileUtils
+            return FileUtils.get_file_size_bytes(message)
+        except ImportError:
+            # 回退到原有逻辑
+            if not message:
+                return 0
+
+            # 检查所有可能的媒体类型
+            media_types = ['document', 'video', 'photo', 'audio', 'voice',
+                          'video_note', 'animation', 'sticker']
+
+            for media_type in media_types:
+                media = getattr(message, media_type, None)
+                if media and hasattr(media, 'file_size') and media.file_size:
+                    return media.file_size
+
             return 0
-
-        # 检查所有可能的媒体类型
-        media_types = ['document', 'video', 'photo', 'audio', 'voice',
-                      'video_note', 'animation', 'sticker']
-
-        for media_type in media_types:
-            media = getattr(message, media_type, None)
-            if media and hasattr(media, 'file_size') and media.file_size:
-                return media.file_size
-
-        return 0
 
 
 

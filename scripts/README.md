@@ -4,9 +4,9 @@
 
 ## 📁 文件列表
 
-### `simple_session_generator.py`
+### `create_client_session.py`
 
-智能会话文件生成程序，用于为多客户端下载器创建 Telegram 会话文件。
+智能会话文件生成程序 - 控制台交互版本，用于为多客户端下载器创建 Telegram 会话文件。
 
 ## 🚀 使用方法
 
@@ -14,192 +14,169 @@
 
 ```bash
 # 从项目根目录运行
-python scripts/simple_session_generator.py
+python scripts/create_client_session.py
 ```
 
-## ✨ 新功能特性
+## ✨ 核心功能特性
 
-### 智能配置读取
+### 交互式配置
 
-- ✅ **自动读取客户端数量**: 从配置文件读取 `max_concurrent_clients` 参数
-- ✅ **动态会话名称**: 根据客户端数量自动生成对应数量的会话文件
-- ✅ **配置文件集成**: 与主程序配置保持一致
-- ✅ **环境变量支持**: 支持通过 `MAX_CONCURRENT_CLIENTS` 环境变量控制
+- ✅ **控制台交互**: 通过控制台输入电话号码和会话数量
+- ✅ **硬编码配置**: API ID、API Hash 和代理配置已预设
+- ✅ **智能验证**: 自动验证输入格式和范围
+- ✅ **实时反馈**: 显示配置信息供用户确认
 
 ### 智能增量创建 🆕
 
 - ✅ **会话文件检测**: 自动检测已存在的会话文件
 - ✅ **增量创建**: 只创建缺失的会话文件，跳过已存在的
 - ✅ **完整性验证**: 验证所有需要的会话文件是否完整
-- ✅ **多余文件提醒**: 识别并提醒多余的会话文件
+- ✅ **智能分析**: 识别并提醒多余的会话文件
 
-### 配置示例
+### 设备伪装配置
 
-#### 通过环境变量设置
+程序内置多种设备配置，自动轮换使用：
+
+- **MacBook Pro** (macOS 14.1, TG-Manager Desktop 4.12.2)
+- **Dell XPS 13** (Windows 11, TG-Manager Desktop 4.11.8)
+- **ThinkPad X1 Carbon** (Ubuntu 22.04, TG-Manager Desktop 4.10.5)
+- **iMac** (macOS 13.6, TG-Manager Desktop 4.12.0)
+- **Surface Pro 9** (Windows 10, TG-Manager Desktop 4.11.6)
+
+### 会话文件命名规则
+
+程序根据电话号码自动生成会话文件名：
+
+```
+格式: client_电话号码数字_序号.session
+示例: client_8618758361347_1.session, client_8618758361347_2.session
+```
+
+## 🚀 使用示例
+
+### 场景 1: 首次运行（交互式创建）
 
 ```bash
-# 设置客户端数量为2
-export MAX_CONCURRENT_CLIENTS=2
-
-# 运行会话生成器
-python scripts/simple_session_generator.py
+python scripts/create_client_session.py
 ```
 
-#### 配置文件设置
-
-程序会自动读取项目配置文件中的以下参数：
-
-- `max_concurrent_clients`: 客户端数量
-- `session_directory`: 会话文件目录
-- `DEFAULT_SESSION_NAMES`: 会话文件名称模板
-
-### 输出示例
-
-#### 客户端数量为 2 时
+**交互过程:**
 
 ```
-sessions/
-├── client_session_1.session
-└── client_session_2.session
-```
+� Telegram智能会话文件生成程序
+============================================================
+� API 配置信息:
+   API ID: 25098445
+   API Hash: cc2fa5a7...614e4555
+   代理: socks5://127.0.0.1:7890
 
-#### 客户端数量为 3 时（默认）
+📱 请输入电话号码 (格式: +86xxxxxxxxxx): +8618758361347
+   ✅ 电话号码: +8618758361347
+� 请输入需要生成的会话文件数量 (1-10): 3
+   ✅ 会话文件数量: 3
+📝 生成 3 个会话名称:
+   - client_8618758361347_1.session
+   - client_8618758361347_2.session
+   - client_8618758361347_3.session
 
-```
-sessions/
-├── client_session_1.session
-├── client_session_2.session
-└── client_session_3.session
-```
+配置信息是否正确？(y/n): y
 
-## 🚀 智能增量创建示例
-
-### 场景 1: 首次运行（无会话文件）
-
-```bash
-export MAX_CONCURRENT_CLIENTS=4
-python scripts/simple_session_generator.py
-```
-
-**输出:**
-
-```
 🔍 分析已存在的会话文件...
 📊 会话文件分析结果:
-   需要的会话总数: 4
+   需要的会话总数: 3
    已存在的会话: 0 个
-   需要创建的会话: 4 个
-     - client_session_1, client_session_2, client_session_3, client_session_4
+   需要创建的会话: 3 个
+     - client_8618758361347_1, client_8618758361347_2, client_8618758361347_3
 
-🔄 开始顺序创建 4 个缺失的会话文件
-```
-
-### 场景 2: 增加客户端数量（已有 3 个，需要 4 个）
-
-```bash
-# 当前已有: client_session_1.session, client_session_2.session, client_session_3.session
-export MAX_CONCURRENT_CLIENTS=4
-python scripts/simple_session_generator.py
-```
-
-**输出:**
-
-```
-🔍 分析已存在的会话文件...
-📊 会话文件分析结果:
-   需要的会话总数: 4
-   已存在的会话: 3 个
-     - client_session_1, client_session_2, client_session_3
-   需要创建的会话: 1 个
-     - client_session_4
-
-❓ 是否创建缺失的 1 个会话文件？
+❓ 是否创建缺失的 3 个会话文件？
 继续创建？(y/n): y
 
-🔄 开始顺序创建 1 个缺失的会话文件
+🔄 开始顺序创建 3 个缺失的会话文件
+   每个会话之间将间隔1分钟以避免频率限制
+```
+
+### 场景 2: 增量创建（部分会话已存在）
+
+当已有部分会话文件时，程序会智能检测并只创建缺失的：
+
+```
+🔍 分析已存在的会话文件...
+📊 会话文件分析结果:
+   需要的会话总数: 3
+   已存在的会话: 1 个
+     - client_8618758361347_1
+   需要创建的会话: 2 个
+     - client_8618758361347_2, client_8618758361347_3
+
+❓ 是否创建缺失的 2 个会话文件？
+继续创建？(y/n): y
 ```
 
 ### 场景 3: 所有会话文件已存在
 
-```bash
-# 当前已有所有需要的会话文件
-export MAX_CONCURRENT_CLIENTS=3
-python scripts/simple_session_generator.py
-```
-
-**输出:**
-
 ```
 🔍 分析已存在的会话文件...
 📊 会话文件分析结果:
    需要的会话总数: 3
    已存在的会话: 3 个
-     - client_session_1, client_session_2, client_session_3
+     - client_8618758361347_1, client_8618758361347_2, client_8618758361347_3
    需要创建的会话: 0 个
 
 ✅ 所有需要的会话文件都已存在，无需创建新的会话文件！
-📁 会话目录: E:\pythonProject\multiDownloadPyrogram\sessions
-📝 可用会话: client_session_1, client_session_2, client_session_3
+📁 会话目录: D:\pythonproject\multiDownloadPyrogram\sessions
+📝 可用会话: client_8618758361347_1, client_8618758361347_2, client_8618758361347_3
 
 ✨ 程序执行完成!
 ```
 
-### 场景 4: 有多余的会话文件
+## 🔧 技术特性
 
-```bash
-# 当前有: client_session_1~5.session, old_session.session
-export MAX_CONCURRENT_CLIENTS=3
-python scripts/simple_session_generator.py
-```
+### 安全特性
+1. **硬编码配置**: API 凭据预设在代码中，无需额外配置
+2. **代理支持**: 内置 SOCKS5 代理配置，支持网络环境限制
+3. **设备伪装**: 多种真实设备配置轮换，降低检测风险
+4. **频率控制**: 会话创建间隔1分钟，避免 Telegram 频率限制
 
-**输出:**
+### 智能特性
+1. **交互式界面**: 友好的控制台交互，实时验证输入
+2. **增量创建**: 智能检测已存在会话，只创建缺失部分
+3. **错误处理**: 完善的异常处理和用户提示
+4. **状态验证**: 创建后自动验证会话有效性
 
-```
-📊 会话文件分析结果:
-   需要的会话总数: 3
-   已存在的会话: 6 个
-     - client_session_1, client_session_2, client_session_3, client_session_4, client_session_5, old_session
-   需要创建的会话: 0 个
-   多余的会话文件: 3 个
-     - client_session_4, client_session_5, old_session
-     (这些文件不会被删除，但不会被主程序使用)
+## 📋 硬编码配置
 
-✅ 所有需要的会话文件都已存在，无需创建新的会话文件！
-```
-
-## 🔧 技术改进
-
-1. **模块化设计**: 与主项目配置系统集成
-2. **错误处理**: 配置加载失败时自动回退到默认配置
-3. **智能提示**: 显示当前配置和修改方法
-4. **路径管理**: 自动处理项目路径和模块导入
-
-## 📋 配置参数
-
-| 参数       | 环境变量                 | 默认值    | 说明                 |
-| ---------- | ------------------------ | --------- | -------------------- |
-| 客户端数量 | `MAX_CONCURRENT_CLIENTS` | 3         | 要创建的会话文件数量 |
-| API ID     | `API_ID`                 | -         | Telegram API ID      |
-| API Hash   | `API_HASH`               | -         | Telegram API Hash    |
-| 电话号码   | `PHONE_NUMBER`           | -         | Telegram 注册手机号  |
-| 代理主机   | `PROXY_HOST`             | 127.0.0.1 | SOCKS5 代理地址      |
-| 代理端口   | `PROXY_PORT`             | 7890      | SOCKS5 代理端口      |
+| 配置项     | 值                                | 说明                    |
+| ---------- | --------------------------------- | ----------------------- |
+| API ID     | `25098445`                        | Telegram API ID（已设置） |
+| API Hash   | `cc2fa5a762621d306d8de030614e4555` | Telegram API Hash（已设置） |
+| 代理主机   | `127.0.0.1`                       | SOCKS5 代理地址         |
+| 代理端口   | `7890`                            | SOCKS5 代理端口         |
+| 会话目录   | `sessions`                        | 会话文件存储目录        |
+| 数量限制   | `1-10`                            | 支持创建的会话文件数量  |
 
 ## 💡 使用建议
 
-1. **首次使用**: 先设置好 API 凭据和代理配置
-2. **客户端数量**: 根据实际需要设置，建议 1-5 个
-3. **网络环境**: 确保代理配置正确（如果需要）
-4. **会话管理**: 生成的会话文件请妥善保管
+1. **网络环境**: 确保 SOCKS5 代理 `127.0.0.1:7890` 可用
+2. **电话号码**: 使用已注册 Telegram 的手机号码
+3. **验证码**: 准备接收 Telegram 验证码
+4. **会话数量**: 建议根据实际下载需求设置（通常 2-5 个）
+5. **安全保管**: 生成的 `.session` 文件包含登录凭据，请妥善保管
 
 ## 🔄 与主程序的关系
 
 ```
-scripts/simple_session_generator.py
-    ↓ 生成会话文件
-sessions/client_session_*.session
+scripts/create_client_session.py
+    ↓ 交互式创建会话文件
+sessions/client_电话号码_*.session
     ↓ 被主程序使用
-main.py (多客户端下载器)
+test_downloader_stream.py (多客户端下载器)
 ```
 
 这个脚本是整个多客户端下载系统的**基础设施组件**，为后续的并发下载操作提供必要的认证会话。
+
+## ⚠️ 注意事项
+
+1. **一次性设置**: 会话文件创建后可长期使用，无需重复创建
+2. **账号安全**: 每个会话对应一个 Telegram 账号，请确保账号安全
+3. **频率限制**: 程序已内置防频率限制机制，请勿手动加速
+4. **网络要求**: 需要稳定的网络连接和有效的代理配置
