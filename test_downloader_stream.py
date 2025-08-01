@@ -47,6 +47,12 @@ def setup_logging(verbose: bool = True):
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
 
+    # 清除所有子logger的处理器
+    for name in logging.Logger.manager.loggerDict:
+        logger_obj = logging.getLogger(name)
+        logger_obj.handlers.clear()
+        logger_obj.propagate = True
+
     # 创建格式化器
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
@@ -129,6 +135,7 @@ class MultiClientDownloader:
             "failed": 0,
             "start_time": None
         }
+        self._results_processed = False  # 防止重复输出统计信息
 
         # 初始化智能消息分配器（完整配置，与main.py程序保持一致）
         self.distribution_config = DistributionConfig(
@@ -429,11 +436,8 @@ class MultiClientDownloader:
             logger.info("🧠 使用主程序的MessageGrouper进行分组...")
             from core.message_grouper import MessageGrouper
 
-            # 创建消息分组器（与主程序保持一致）
-            message_grouper = MessageGrouper(
-                batch_size=200,
-                max_retries=3
-            )
+            # 创建消息分组器（简化版本）
+            message_grouper = MessageGrouper()
 
             # 直接从消息列表进行分组（避免转换过程中的信息丢失）
             message_collection = message_grouper.group_messages_from_list(all_messages)
@@ -902,6 +906,13 @@ class MultiClientDownloader:
 
     async def process_results(self, results, validation_stats=None):
         """处理下载结果"""
+        # 防止重复处理
+        if self._results_processed:
+            logger.warning("⚠️ 结果已经处理过，跳过重复处理")
+            return
+
+        self._results_processed = True
+
         total_downloaded = 0
         total_failed = 0
         client_results = []
