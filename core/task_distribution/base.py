@@ -18,17 +18,14 @@ class DistributionMode(Enum):
 
 class LoadBalanceMetric(Enum):
     """负载均衡指标"""
-    MESSAGE_COUNT = "message_count"       # 按消息数量
-    FILE_COUNT = "file_count"            # 按文件数量
     ESTIMATED_SIZE = "estimated_size"     # 按估算大小
-    MIXED = "mixed"                      # 混合指标
 
 
 @dataclass
 class DistributionConfig:
     """分配配置"""
     mode: DistributionMode = DistributionMode.MEDIA_GROUP_AWARE
-    load_balance_metric: LoadBalanceMetric = LoadBalanceMetric.FILE_COUNT
+    load_balance_metric: LoadBalanceMetric = LoadBalanceMetric.ESTIMATED_SIZE
     max_imbalance_ratio: float = 0.3  # 最大不均衡比例（0.3表示最大差异30%）
     prefer_large_groups_first: bool = True  # 优先分配大组
     enable_validation: bool = True  # 启用验证

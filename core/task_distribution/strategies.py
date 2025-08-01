@@ -5,7 +5,7 @@
 import logging
 from typing import List, Dict, Any
 
-from .base import TaskDistributionStrategy, DistributionConfig, LoadBalanceMetric
+from .base import TaskDistributionStrategy, DistributionConfig
 from models.message_group import (
     MessageGroupCollection,
     TaskDistributionResult,
@@ -71,22 +71,9 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
         return result
     
     def _find_min_load_client(self, assignments: List[ClientTaskAssignment]) -> int:
-        """根据配置的指标找到负载最小的客户端"""
-        metric = self.config.load_balance_metric
-        
-        if metric == LoadBalanceMetric.FILE_COUNT:
-            loads = [assignment.total_files for assignment in assignments]
-        elif metric == LoadBalanceMetric.MESSAGE_COUNT:
-            loads = [assignment.total_messages for assignment in assignments]
-        elif metric == LoadBalanceMetric.ESTIMATED_SIZE:
-            loads = [assignment.estimated_size for assignment in assignments]
-        else:  # MIXED
-            # 混合指标：文件数量权重0.6，大小权重0.4
-            loads = [
-                assignment.total_files * 0.6 + assignment.estimated_size / (1024*1024) * 0.4
-                for assignment in assignments
-            ]
-        
+        """根据估算大小找到负载最小的客户端"""
+        # 使用估算大小作为负载均衡指标
+        loads = [assignment.estimated_size for assignment in assignments]
         return loads.index(min(loads))
 
 
