@@ -18,7 +18,7 @@ class DistributionMode(Enum):
 
 class LoadBalanceMetric(Enum):
     """负载均衡指标"""
-    ESTIMATED_SIZE = "estimated_size"     # 按估算大小
+    ESTIMATED_SIZE = "estimated_size"     # 按真实文件大小
 
 
 @dataclass

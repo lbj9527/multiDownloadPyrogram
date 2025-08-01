@@ -71,8 +71,8 @@ class MediaGroupAwareDistributionStrategy(TaskDistributionStrategy):
         return result
     
     def _find_min_load_client(self, assignments: List[ClientTaskAssignment]) -> int:
-        """根据估算大小找到负载最小的客户端"""
-        # 使用估算大小作为负载均衡指标
+        """根据真实文件大小找到负载最小的客户端"""
+        # 使用真实文件大小作为负载均衡指标
         loads = [assignment.estimated_size for assignment in assignments]
         return loads.index(min(loads))
 

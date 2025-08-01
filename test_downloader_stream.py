@@ -85,8 +85,8 @@ API_ID = 25098445
 API_HASH = "cc2fa5a762621d306d8de030614e4555"
 PHONE_NUMBER = "+8618758361347"
 TARGET_CHANNEL = "csdkl"
-START_MESSAGE_ID = 72849
-END_MESSAGE_ID = 72710
+START_MESSAGE_ID = 72710
+END_MESSAGE_ID = 72849
 TOTAL_MESSAGES = END_MESSAGE_ID - START_MESSAGE_ID + 1
 SESSION_NAMES = [
     "client_8618758361347_1",
@@ -133,7 +133,7 @@ class MultiClientDownloader:
         # 初始化智能消息分配器（完整配置，与main.py程序保持一致）
         self.distribution_config = DistributionConfig(
             mode=DistributionMode.MEDIA_GROUP_AWARE,  # 使用媒体组感知分配
-            load_balance_metric=LoadBalanceMetric.ESTIMATED_SIZE,  # 使用估算大小进行负载均衡
+            load_balance_metric=LoadBalanceMetric.ESTIMATED_SIZE,  # 使用真实文件大小进行负载均衡
             max_imbalance_ratio=0.3,  # 最大不均衡比例30%
             prefer_large_groups_first=True,  # 优先分配大媒体组
             enable_validation=True,  # 启用基本验证

@@ -5,7 +5,6 @@
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 
 # 移除未使用的常量定义
 
@@ -17,31 +16,26 @@ class MessageGroup:
     messages: List[Any] = field(default_factory=list)
     group_type: str = "media_group"  # media_group, single_message
     total_files: int = 0
-    estimated_size: int = 0  # 估算大小（字节）
-    created_at: datetime = field(default_factory=datetime.now)
+    estimated_size: int = 0  # 真实文件大小（字节）
     
     def add_message(self, message: Any):
         """添加消息到组"""
         self.messages.append(message)
         self.total_files = len(self.messages)
-        # 计算实际文件大小
+        # 累加真实文件大小
         self.estimated_size += self._get_message_file_size(message)
     @property
     def is_media_group(self) -> bool:
         """是否为媒体组"""
         return self.group_type == "media_group"
     
-    @property
-    def message_ids(self) -> List[int]:
-        """获取所有消息ID"""
-        return [msg.id for msg in self.messages if msg]
-    
+
     def __len__(self) -> int:
         """返回消息数量"""
         return len(self.messages)
     
     def _get_message_file_size(self, message: Any) -> int:
-        """获取消息文件大小（字节）"""
+        """获取消息的真实文件大小（字节）"""
         if not message:
             return 0
 
@@ -56,9 +50,7 @@ class MessageGroup:
 
         return 0
 
-    def __str__(self) -> str:
-        """字符串表示"""
-        return f"MessageGroup(id={self.group_id}, type={self.group_type}, files={self.total_files})"
+
 
 
 @dataclass
@@ -106,7 +98,7 @@ class MessageGroupCollection:
         total_files = sum(group.total_files for group in self.media_groups.values())
         total_files += len(self.single_messages)
 
-        # 计算总大小
+        # 计算总的真实文件大小
         total_size = sum(group.estimated_size for group in self.media_groups.values())
 
         return {
@@ -126,14 +118,14 @@ class ClientTaskAssignment:
     message_groups: List[MessageGroup] = field(default_factory=list)
     total_messages: int = 0
     total_files: int = 0
-    estimated_size: int = 0
+    estimated_size: int = 0  # 真实文件大小总和（字节）
     
     def add_group(self, group: MessageGroup):
         """添加消息组"""
         self.message_groups.append(group)
         self.total_messages += len(group)
         self.total_files += group.total_files
-        # 累加实际文件大小
+        # 累加真实文件大小
         self.estimated_size += group.estimated_size
     
     def get_all_messages(self) -> List[Any]:
@@ -143,21 +135,8 @@ class ClientTaskAssignment:
             all_messages.extend(group.messages)
         return all_messages
     
-    def get_statistics(self) -> Dict[str, Any]:
-        """获取统计信息"""
-        return {
-            "client_name": self.client_name,
-            "total_messages": self.total_messages,
-            "total_files": self.total_files,
-            "estimated_size": self.estimated_size,
-            "groups_count": len(self.message_groups),
-            "media_groups_count": len([g for g in self.message_groups if g.is_media_group]),
-            "single_messages_count": len([g for g in self.message_groups if not g.is_media_group])
-        }
-    
-    def __str__(self) -> str:
-        """字符串表示"""
-        return f"ClientTask({self.client_name}: {self.total_files} files, {len(self.message_groups)} groups)"
+
+
 
 
 @dataclass
@@ -167,7 +146,6 @@ class TaskDistributionResult:
     distribution_strategy: str = ""
     total_messages: int = 0
     total_files: int = 0
-    created_at: datetime = field(default_factory=datetime.now)
     
     def add_assignment(self, assignment: ClientTaskAssignment):
         """添加客户端分配"""
@@ -181,28 +159,16 @@ class TaskDistributionResult:
             return {}
         
         file_counts = [assignment.total_files for assignment in self.client_assignments]
-        size_estimates = [assignment.estimated_size for assignment in self.client_assignments]
+        real_sizes = [assignment.estimated_size for assignment in self.client_assignments]
         
         return {
             "clients_count": len(self.client_assignments),
             "file_distribution": file_counts,
-            "size_distribution": size_estimates,
+            "size_distribution": real_sizes,
             "file_balance_ratio": min(file_counts) / max(file_counts) if max(file_counts) > 0 else 1.0,
-            "size_balance_ratio": min(size_estimates) / max(size_estimates) if max(size_estimates) > 0 else 1.0,
+            "size_balance_ratio": min(real_sizes) / max(real_sizes) if max(real_sizes) > 0 else 1.0,
             "average_files_per_client": sum(file_counts) / len(file_counts),
-            "average_size_per_client": sum(size_estimates) / len(size_estimates)
+            "average_size_per_client": sum(real_sizes) / len(real_sizes)
         }
     
-    def get_summary(self) -> str:
-        """获取分配摘要"""
-        stats = self.get_load_balance_stats()
-        summary_lines = [
-            f"任务分配摘要 (策略: {self.distribution_strategy})",
-            f"总计: {self.total_files} 个文件, {len(self.client_assignments)} 个客户端",
-            f"负载均衡比例: {stats.get('file_balance_ratio', 0):.2f}"
-        ]
-        
-        for assignment in self.client_assignments:
-            summary_lines.append(f"  {assignment}")
-        
-        return "\n".join(summary_lines)
+
