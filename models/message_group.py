@@ -163,18 +163,20 @@ class TaskDistributionResult:
         """获取负载均衡统计"""
         if not self.client_assignments:
             return {}
-        
+
         file_counts = [assignment.total_files for assignment in self.client_assignments]
         real_sizes = [assignment.estimated_size for assignment in self.client_assignments]
-        
+        # 将大小分布转换为MB单位
+        real_sizes_mb = [size / (1024 * 1024) for size in real_sizes]
+
         return {
             "clients_count": len(self.client_assignments),
             "file_distribution": file_counts,
-            "size_distribution": real_sizes,
+            "size_distribution": real_sizes_mb,
             "file_balance_ratio": min(file_counts) / max(file_counts) if max(file_counts) > 0 else 1.0,
             "size_balance_ratio": min(real_sizes) / max(real_sizes) if max(real_sizes) > 0 else 1.0,
             "average_files_per_client": sum(file_counts) / len(file_counts),
-            "average_size_per_client": sum(real_sizes) / len(real_sizes)
+            "average_size_per_client": sum(real_sizes_mb) / len(real_sizes_mb)
         }
     
 

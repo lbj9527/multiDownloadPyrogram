@@ -11,7 +11,8 @@ from config.constants import LOG_FORMAT, DEFAULT_LOG_LEVEL
 def setup_logging(
     log_level: str = DEFAULT_LOG_LEVEL,
     log_file: Optional[Path] = None,
-    clear_log: bool = True
+    clear_log: bool = True,
+    suppress_pyrogram: bool = True
 ) -> logging.Logger:
     """
     设置日志配置
@@ -48,8 +49,32 @@ def setup_logging(
         file_handler.setLevel(getattr(logging, log_level.upper()))
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
-    
+
+    # 屏蔽pyrogram的详细日志输出
+    if suppress_pyrogram:
+        _suppress_pyrogram_logs()
+
     return root_logger
+
+def _suppress_pyrogram_logs():
+    """屏蔽pyrogram的详细日志输出"""
+    # 设置pyrogram相关日志器的级别为ERROR，只显示错误信息
+    pyrogram_loggers = [
+        "pyrogram",
+        "pyrogram.connection",
+        "pyrogram.connection.connection",
+        "pyrogram.connection.transport",
+        "pyrogram.connection.transport.tcp",
+        "pyrogram.connection.transport.tcp.tcp",
+        "pyrogram.session",
+        "pyrogram.session.session"
+    ]
+
+    for logger_name in pyrogram_loggers:
+        logging.getLogger(logger_name).setLevel(logging.ERROR)
+
+    # 对于dispatcher，设置为WARNING级别（可能需要看到一些重要信息）
+    logging.getLogger("pyrogram.dispatcher").setLevel(logging.WARNING)
 
 def get_logger(name: str) -> logging.Logger:
     """获取指定名称的日志器"""

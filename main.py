@@ -274,7 +274,7 @@ async def main():
     """
     # 设置日志
     log_file = Path("logs") / "main.log"
-    setup_logging(log_file=log_file, clear_log=True)
+    setup_logging(log_file=log_file, clear_log=True, suppress_pyrogram=True)
     
     # 启动带宽监控线程（兼容原有功能）
     from monitoring.bandwidth_monitor import create_simple_bandwidth_monitor
