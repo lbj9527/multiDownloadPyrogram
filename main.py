@@ -9,6 +9,7 @@ from typing import List, Optional
 # 配置和工具
 from config.settings import AppConfig
 from utils.logging_utils import setup_logging
+from utils.channel_utils import ChannelUtils
 
 # 核心模块
 from core.client import ClientManager
@@ -151,7 +152,7 @@ class MultiClientDownloader:
         # 创建下载任务
         download_tasks = []
         for assignment in distribution_result.client_assignments:
-            client = self._get_client_by_name(assignment.client_name)
+            client = self.client_manager.get_client_by_name(assignment.client_name)
             if client:
                 task = self._download_client_messages(client, assignment, channel)
                 download_tasks.append(task)
@@ -166,8 +167,8 @@ class MultiClientDownloader:
 
         self.log_info(f"🔄 {client_name} 开始下载 {len(messages)} 个文件...")
 
-        # 获取频道信息并创建目录（与原程序保持一致）
-        channel_info = await self._get_channel_info(client, channel)
+        # 获取频道信息并创建目录
+        channel_info = await ChannelUtils.get_channel_info(client, channel)
 
         for message in messages:
             try:
@@ -197,40 +198,6 @@ class MultiClientDownloader:
 
         self.log_info(f"✅ {client_name} 下载任务完成")
     
-    def _get_client_by_name(self, client_name: str):
-        """根据名称获取客户端"""
-        for client in self.clients:
-            if client.name == client_name:
-                return client
-        return None
-
-    async def _get_channel_info(self, client, channel: str) -> dict:
-        """获取频道信息"""
-        try:
-            chat = await client.get_chat(channel)
-            username = f"@{chat.username}" if chat.username else f"id_{chat.id}"
-            title = chat.title or "Unknown"
-
-            # 清理文件名
-            import re
-            safe_title = re.sub(r'[<>:"/\\|?*]', '_', title).strip('. ')[:100]
-            folder_name = f"{username}-{safe_title}"
-
-            return {
-                "username": username,
-                "title": title,
-                "folder_name": folder_name
-            }
-        except Exception as e:
-            self.log_error(f"获取频道信息失败: {e}")
-            # 回退到简单的文件夹名
-            import re
-            clean_channel = re.sub(r'[<>:"/\\|?*@]', '_', channel)
-            return {
-                "username": channel,
-                "title": channel,
-                "folder_name": clean_channel
-            }
 
     def _print_final_results(self):
         """打印最终结果"""

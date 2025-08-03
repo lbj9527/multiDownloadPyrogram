@@ -159,3 +159,10 @@ class ClientManager(LoggerMixin):
     def get_client_names(self) -> List[str]:
         """获取客户端名称列表"""
         return [client.name for client in self.clients]
+
+    def get_client_by_name(self, client_name: str):
+        """根据名称获取客户端"""
+        for client in self.clients:
+            if client.name == client_name:
+                return client
+        return None

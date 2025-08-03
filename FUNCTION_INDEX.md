@@ -35,7 +35,7 @@
   - `ClientManager` 类
     - `__init__()`, `initialize_clients()`, `_create_client()`
     - `start_all_clients()`, `_start_single_client()`, `stop_all_clients()`
-    - `get_client_info()`, `get_clients()`, `get_client_names()`
+    - `get_client_info()`, `get_clients()`, `get_client_names()`, `get_client_by_name()`
 
 - [core/client/session_manager.py](#-coreclientsession_managerpy) - 会话管理器
   - `SessionManager` 类
@@ -112,6 +112,11 @@
     - `create_proxy_config()`, `get_network_stats()`, `calculate_bandwidth()` (静态方法)
   - `BandwidthMonitor` 类
     - `__init__()`, `start_monitoring()`, `stop_monitoring()`
+
+- [utils/channel_utils.py](#-utilschannel_utilspy) - 频道工具
+
+  - `ChannelUtils` 类
+    - `get_channel_info()`, `sanitize_folder_name()` (静态方法)
 
 - [utils/logging_utils.py](#-utilslogging_utilspy) - 日志工具
   - `setup_logging()` 函数
@@ -200,14 +205,6 @@
   - `distribution_result`: 任务分配结果
   - `channel`: 频道名称
 - **返回值**: None
-
-#### `async _get_channel_info(self, client, channel: str) -> dict`
-
-- **功能**: 获取频道信息并生成文件夹名称
-- **参数**:
-  - `client`: Pyrogram 客户端
-  - `channel`: 频道名称
-- **返回值**: 包含频道信息的字典
 
 #### `_print_final_results(self)`
 
@@ -352,6 +349,13 @@
 - **参数**: 无
 - **返回值**: 客户端名称字符串列表
 
+#### `get_client_by_name(self, client_name: str)`
+
+- **功能**: 根据名称获取客户端
+- **参数**:
+  - `client_name`: 客户端名称
+- **返回值**: 客户端对象或 None
+
 ---
 
 ## 📁 core/client/session_manager.py
@@ -490,6 +494,27 @@
 - **功能**: 停止监控
 - **参数**: 无
 - **返回值**: None
+
+---
+
+## 📁 utils/channel_utils.py
+
+### 类: ChannelUtils
+
+#### `@staticmethod async get_channel_info(client: Client, channel: str) -> Dict[str, Any]`
+
+- **功能**: 获取频道信息并生成文件夹名称
+- **参数**:
+  - `client`: Pyrogram 客户端
+  - `channel`: 频道名称
+- **返回值**: 包含频道信息的字典
+
+#### `@staticmethod sanitize_folder_name(name: str) -> str`
+
+- **功能**: 清理文件夹名称，移除非法字符
+- **参数**:
+  - `name`: 原始名称
+- **返回值**: 清理后的名称
 
 ---
 
