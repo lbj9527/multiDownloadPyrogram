@@ -54,11 +54,6 @@
     - `__init__()`, `group_messages_from_list()`, `_group_messages()`
   - `is_media_group_message()` 函数
 
-- [core/message_grouper.py](#-coremessage_grouperpy) - 消息分组器（备用）
-
-  - `MessageGrouper` 类
-    - `__init__()`, `group_messages_from_list()`, `_group_messages()`
-
 - [core/message/processor.py](#-coremessageprocessorpy) - 消息处理器
   - `MessageProcessor` 类
     - `__init__()`, `validate_messages()`, `get_message_statistics()`
@@ -205,6 +200,14 @@
   - `distribution_result`: 任务分配结果
   - `channel`: 频道名称
 - **返回值**: None
+
+#### `async _get_channel_info(self, client, channel: str) -> dict`
+
+- **功能**: 获取频道信息并生成文件夹名称
+- **参数**:
+  - `client`: Pyrogram 客户端
+  - `channel`: 频道名称
+- **返回值**: 包含频道信息的字典
 
 #### `_print_final_results(self)`
 
@@ -389,7 +392,7 @@
   - `config`: 下载配置对象
 - **返回值**: None
 
-#### `async download_message(self, client: Client, message: Any, folder_name: str) -> Optional[Path]`
+#### `async download_media(self, client: Client, message: Any, folder_name: str) -> Optional[Path]`
 
 - **功能**: 智能选择下载策略并下载消息
 - **参数**:
@@ -820,32 +823,6 @@
 - **参数**:
   - `message`: 消息对象
 - **返回值**: 布尔值，True 表示是媒体组消息
-
----
-
-## 📁 core/message_grouper.py
-
-### 类: MessageGrouper
-
-#### `__init__(self)`
-
-- **功能**: 初始化消息分组器
-- **参数**: 无
-- **返回值**: None
-
-#### `group_messages_from_list(self, messages: List[Any]) -> MessageGroupCollection`
-
-- **功能**: 从已获取的消息列表进行媒体组分析
-- **参数**:
-  - `messages`: 消息对象列表
-- **返回值**: 消息组集合
-
-#### `_group_messages(self, messages: List[Any]) -> MessageGroupCollection`
-
-- **功能**: 将消息按媒体组分组（内部方法）
-- **参数**:
-  - `messages`: 消息对象列表
-- **返回值**: 消息组集合
 
 ---
 

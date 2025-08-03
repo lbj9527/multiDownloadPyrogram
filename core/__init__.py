@@ -4,8 +4,7 @@
 """
 
 # 模块化导入
-from .message_grouper import MessageGrouper
-from .message import MessageFetcher, MessageProcessor
+from .message import MessageFetcher, MessageGrouper, MessageProcessor
 from .client import ClientManager, SessionManager
 from .download import DownloadManager, StreamDownloader, RawDownloader
 from .task_distribution import TaskDistributor, DistributionConfig, DistributionMode

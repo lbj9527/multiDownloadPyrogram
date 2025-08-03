@@ -3,7 +3,6 @@
 协调各个模块完成多客户端下载任务
 """
 import asyncio
-import threading
 from pathlib import Path
 from typing import List, Optional
 
@@ -18,7 +17,7 @@ from core.task_distribution import TaskDistributor
 from core.download import DownloadManager
 
 # 监控模块
-from monitoring import StatsCollector, BandwidthMonitor
+from monitoring import StatsCollector
 
 class MultiClientDownloader:
     """
@@ -37,8 +36,7 @@ class MultiClientDownloader:
         
         # 监控组件
         self.stats_collector = StatsCollector()
-        self.bandwidth_monitor = BandwidthMonitor()
-        
+
         # 状态
         self.is_running = False
         self.clients = []
@@ -92,9 +90,7 @@ class MultiClientDownloader:
     
     async def _start_monitoring(self):
         """启动监控"""
-        # 启动带宽监控
-        self.bandwidth_monitor.start()
-        self.log_info("📊 带宽监控已启动")
+        self.log_info("📊 监控系统已启动")
     
     async def _initialize_clients(self):
         """初始化客户端"""
@@ -209,7 +205,7 @@ class MultiClientDownloader:
         return None
 
     async def _get_channel_info(self, client, channel: str) -> dict:
-        """获取频道信息 - 与原程序保持一致"""
+        """获取频道信息"""
         try:
             chat = await client.get_chat(channel)
             username = f"@{chat.username}" if chat.username else f"id_{chat.id}"
@@ -228,13 +224,14 @@ class MultiClientDownloader:
         except Exception as e:
             self.log_error(f"获取频道信息失败: {e}")
             # 回退到简单的文件夹名
+            import re
             clean_channel = re.sub(r'[<>:"/\\|?*@]', '_', channel)
             return {
                 "username": channel,
                 "title": channel,
                 "folder_name": clean_channel
             }
-    
+
     def _print_final_results(self):
         """打印最终结果"""
         self.log_info("📊 生成最终报告...")
@@ -247,13 +244,10 @@ class MultiClientDownloader:
     async def _cleanup(self):
         """清理资源"""
         self.log_info("🧹 清理资源...")
-        
-        # 停止监控
-        self.bandwidth_monitor.stop()
-        
+
         # 停止客户端
         await self.client_manager.stop_all_clients()
-        
+
         self.log_info("✅ 清理完成")
     
     def log_info(self, message: str):
