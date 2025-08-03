@@ -1,7 +1,6 @@
 """
 消息分组器
 负责从Telegram获取消息并按媒体组进行分组
-重构：移动到core/message/目录
 """
 
 from typing import List, Dict, Any

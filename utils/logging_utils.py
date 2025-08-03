@@ -1,6 +1,5 @@
 """
 日志工具类
-从test_downloader_stream.py提取的日志配置
 """
 import logging
 import sys
@@ -16,7 +15,6 @@ def setup_logging(
 ) -> logging.Logger:
     """
     设置日志配置
-    从test_downloader_stream.py提取的日志设置逻辑
     """
     # 创建日志目录
     if log_file:

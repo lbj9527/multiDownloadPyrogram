@@ -1,6 +1,6 @@
 """
 下载管理器
-协调不同的下载策略，从test_downloader_stream.py提取的智能下载选择逻辑
+协调不同的下载策略，智能选择下载方法
 """
 from pathlib import Path
 from typing import Optional, Any, List, Dict
@@ -36,7 +36,6 @@ class DownloadManager(LoggerMixin):
     ) -> Optional[Path]:
         """
         智能选择下载方法
-        从test_downloader_stream.py提取的决策逻辑
         """
         try:
             self.download_stats["total_downloads"] += 1

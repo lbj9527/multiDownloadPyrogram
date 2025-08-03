@@ -1,6 +1,6 @@
 """
 流式下载器
-从test_downloader_stream.py提取的stream_media下载逻辑
+使用stream_media方法进行下载
 """
 from pathlib import Path
 from typing import Optional, Any
@@ -13,7 +13,6 @@ class StreamDownloader(BaseDownloader):
     async def download(self, client: Client, message: Any, folder_name: str) -> Optional[Path]:
         """
         使用stream_media方法下载媒体文件
-        从test_downloader_stream.py提取的逻辑
         """
         try:
             # 验证消息

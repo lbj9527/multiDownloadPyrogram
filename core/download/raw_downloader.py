@@ -1,6 +1,6 @@
 """
 RAW API下载器
-从test_downloader_stream.py提取的RAW API下载逻辑
+使用Telegram RAW API进行下载
 """
 from pathlib import Path
 from typing import Optional, Any
@@ -16,7 +16,6 @@ class RawDownloader(BaseDownloader):
     async def download(self, client: Client, message: Any, folder_name: str) -> Optional[Path]:
         """
         使用RAW API方法下载媒体文件
-        从test_downloader_stream.py提取的逻辑
         """
         try:
             # 验证消息

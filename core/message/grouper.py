@@ -1,6 +1,5 @@
 """
 消息分组器
-从core/message_grouper.py移动而来，保持原有功能不变
 """
 
 from typing import List, Dict, Any

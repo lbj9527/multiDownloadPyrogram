@@ -1,6 +1,5 @@
 """
 统计收集器
-从test_downloader_stream.py提取的统计功能
 """
 import time
 from dataclasses import dataclass, field
@@ -11,7 +10,6 @@ from utils.logging_utils import LoggerMixin
 class DownloadStats:
     """
     下载统计数据
-    从test_downloader_stream.py提取的stats结构
     """
     total_messages: int = 0
     downloaded: int = 0
@@ -52,7 +50,6 @@ class DownloadStats:
 class StatsCollector(LoggerMixin):
     """
     统计收集器
-    从test_downloader_stream.py提取的统计管理功能
     """
     
     def __init__(self, total_messages: int = 0):
@@ -67,11 +64,10 @@ class StatsCollector(LoggerMixin):
         self.stats.total_messages = total
         self.log_info(f"设置总消息数: {total}")
     
-    def update_download_progress(self, success: bool, message_id: Optional[int] = None, 
+    def update_download_progress(self, success: bool, message_id: Optional[int] = None,
                                client_name: Optional[str] = None, file_size_mb: float = 0.0):
         """
         更新下载进度
-        从test_downloader_stream.py提取的逻辑
         """
         if success:
             self.stats.downloaded += 1
@@ -115,7 +111,6 @@ class StatsCollector(LoggerMixin):
     def report_progress(self):
         """
         报告当前进度
-        从test_downloader_stream.py提取的进度报告逻辑
         """
         progress = self.stats.get_progress_percentage()
         elapsed = self.stats.get_elapsed_time()
@@ -137,7 +132,6 @@ class StatsCollector(LoggerMixin):
     def get_final_report(self) -> Dict[str, Any]:
         """
         获取最终报告
-        从test_downloader_stream.py提取的最终统计逻辑
         """
         total_time = self.stats.get_elapsed_time()
         
@@ -175,7 +169,6 @@ class StatsCollector(LoggerMixin):
     def print_final_report(self):
         """
         打印最终报告
-        从test_downloader_stream.py提取的结果输出逻辑
         """
         report = self.get_final_report()
         summary = report["summary"]

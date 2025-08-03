@@ -1,6 +1,6 @@
 """
-主程序入口 - 重构版本
-协调各个模块完成多客户端下载任务，保持与test_downloader_stream.py相同的功能
+主程序入口
+协调各个模块完成多客户端下载任务
 """
 import asyncio
 import threading
@@ -22,13 +22,12 @@ from monitoring import StatsCollector, BandwidthMonitor
 
 class MultiClientDownloader:
     """
-    多客户端下载器 - 重构版本
-    保持与test_downloader_stream.py相同的功能和接口
+    多客户端下载器
     """
-    
+
     def __init__(self, config: Optional[AppConfig] = None):
         # 使用配置或默认配置
-        self.config = config or AppConfig.from_test_downloader_stream()
+        self.config = config or AppConfig()
         
         # 初始化各个管理器
         self.client_manager = ClientManager(self.config.telegram)
@@ -52,7 +51,6 @@ class MultiClientDownloader:
     ):
         """
         执行下载任务 - 主要入口点
-        保持与test_downloader_stream.py相同的接口
         """
         try:
             # 使用配置中的默认值
@@ -270,13 +268,13 @@ class MultiClientDownloader:
 
 async def main():
     """
-    主函数 - 保持与test_downloader_stream.py相同的入口
+    主函数
     """
     # 设置日志
     log_file = Path("logs") / "main.log"
     setup_logging(log_file=log_file, clear_log=True, suppress_pyrogram=True)
     
-    # 启动带宽监控线程（兼容原有功能）
+    # 启动带宽监控线程
     from monitoring.bandwidth_monitor import create_simple_bandwidth_monitor
     bandwidth_monitor = create_simple_bandwidth_monitor()
     
@@ -295,7 +293,7 @@ async def main():
 
 if __name__ == "__main__":
     # 显示启动信息
-    print("🚀 多客户端Telegram下载器 - 重构版本")
+    print("🚀 多客户端Telegram下载器")
     print("📝 日志文件: logs/main.log")
     
     # 检查TgCrypto

@@ -1,6 +1,5 @@
 """
 网络工具类
-从test_downloader_stream.py提取的网络相关功能
 """
 import psutil
 import time
@@ -14,7 +13,6 @@ class NetworkUtils:
     def create_proxy_config(host: str, port: int) -> Dict[str, Any]:
         """
         创建代理配置
-        从test_downloader_stream.py提取
         """
         return {
             "scheme": "socks5",
@@ -26,7 +24,6 @@ class NetworkUtils:
     def get_network_stats() -> Dict[str, float]:
         """
         获取网络统计信息
-        从test_downloader_stream.py的带宽监控功能提取
         """
         try:
             # 获取网络IO统计
@@ -47,13 +44,12 @@ class NetworkUtils:
     
     @staticmethod
     def calculate_bandwidth(
-        current_stats: Dict[str, float], 
-        previous_stats: Dict[str, float], 
+        current_stats: Dict[str, float],
+        previous_stats: Dict[str, float],
         time_interval: float
     ) -> Dict[str, float]:
         """
         计算带宽使用情况
-        从test_downloader_stream.py的monitor_bandwidth功能提取
         """
         if time_interval <= 0:
             return {"download_mbps": 0.0, "upload_mbps": 0.0}
@@ -74,7 +70,6 @@ class NetworkUtils:
 class BandwidthMonitor:
     """
     带宽监控器
-    从test_downloader_stream.py提取的monitor_bandwidth功能
     """
     
     def __init__(self, update_interval: float = 1.0):

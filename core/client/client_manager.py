@@ -1,6 +1,5 @@
 """
 客户端管理器
-从test_downloader_stream.py提取的客户端管理逻辑
 """
 import asyncio
 from typing import List, Dict, Any, Optional
@@ -59,9 +58,7 @@ class ClientManager(LoggerMixin):
     def _create_client(self, session_name: str) -> Client:
         """
         创建单个客户端
-        从test_downloader_stream.py提取的逻辑
         """
-        session_file = self.session_manager.get_session_file_path(session_name)
         
         client = Client(
             name=session_name,
@@ -76,7 +73,6 @@ class ClientManager(LoggerMixin):
     async def start_all_clients(self) -> None:
         """
         启动所有客户端
-        从test_downloader_stream.py提取的逻辑
         """
         if not self.clients:
             raise RuntimeError("没有可用的客户端")

@@ -1,6 +1,5 @@
 """
 文件操作工具类
-从test_downloader_stream.py提取的文件处理逻辑
 """
 import os
 import re
@@ -15,7 +14,6 @@ class FileUtils:
     def sanitize_filename(filename: str) -> str:
         """
         清理文件名，移除非法字符
-        从test_downloader_stream.py提取
         """
         # 移除或替换非法字符
         filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
@@ -31,7 +29,6 @@ class FileUtils:
     def generate_filename_by_type(message: Any) -> str:
         """
         根据消息类型生成文件名
-        从test_downloader_stream.py提取的逻辑
         """
         message_id = message.id
         
@@ -145,7 +142,6 @@ class FileUtils:
     def get_channel_directory(base_dir: Path, folder_name: str) -> Path:
         """
         获取频道下载目录
-        从test_downloader_stream.py提取的逻辑
         folder_name应该是已经处理过的文件夹名称
         """
         channel_dir = base_dir / folder_name

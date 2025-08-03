@@ -1,6 +1,5 @@
 """
 带宽监控器
-从test_downloader_stream.py提取的带宽监控功能
 """
 import threading
 import time
@@ -11,7 +10,6 @@ from utils.logging_utils import LoggerMixin
 class BandwidthMonitor(LoggerMixin):
     """
     带宽监控器 - 线程版本
-    从test_downloader_stream.py的monitor_bandwidth功能提取
     """
     
     def __init__(self, update_interval: float = 1.0, log_interval: float = 5.0):
@@ -60,7 +58,6 @@ class BandwidthMonitor(LoggerMixin):
     def _monitor_loop(self):
         """
         监控循环
-        从test_downloader_stream.py的monitor_bandwidth函数提取
         """
         self.last_log_time = time.time()
         
@@ -118,7 +115,6 @@ class BandwidthMonitor(LoggerMixin):
 def create_simple_bandwidth_monitor() -> BandwidthMonitor:
     """
     创建简单的带宽监控器
-    用于替代test_downloader_stream.py中的monitor_bandwidth函数
     """
     monitor = BandwidthMonitor(update_interval=1.0, log_interval=10.0)
     

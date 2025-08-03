@@ -1,6 +1,5 @@
 """
 常量定义
-从test_downloader_stream.py提取的常量
 """
 
 # 文件大小常量
