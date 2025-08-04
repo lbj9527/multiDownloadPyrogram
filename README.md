@@ -6,8 +6,8 @@
 
 ## 🚀 当前版本状态
 
-**版本**: v1.1.0-dev  
-**开发阶段**: Phase 1 - 基础功能实现中
+**版本**: v1.3.0
+**开发阶段**: Phase 3 完成 - 功能集成完毕 ✅
 
 ### ✅ 已实现功能
 
@@ -21,7 +21,7 @@
 - ✅ **会话管理**: 自动会话验证、故障恢复和重连
 - ✅ **配置管理**: 统一的配置系统，支持代理、API 配置等
 
-#### 正在开发功能 (v1.1.0-dev)
+#### 扩展功能 (v1.1.0 - v1.3.0)
 
 - ✅ **数据模型扩展**: 统一的下载结果数据模型 (DownloadResult)
 - ✅ **内存下载功能**: 基于现有 RawDownloader 和 StreamDownloader 的正确实现
@@ -86,11 +86,44 @@ pip install -r requirements.txt
 
 ## 🚀 使用方法
 
-### 基础下载功能
+### 基础下载功能（默认模式）
 
 ```bash
-# 运行多客户端下载器
+# 运行多客户端下载器（本地下载模式）
 python main.py
+
+# 自定义参数的本地下载
+python main.py --mode download --source @channel_name --start 1000 --end 2000 --output ./downloads
+```
+
+### 转发上传功能（新增）
+
+```bash
+# 转发到单个频道
+python main.py --mode forward --source @source_channel --targets @target_channel --start 1000 --end 1100
+
+# 转发到多个频道
+python main.py --mode forward --source @source_channel --targets @target1 @target2 @target3 --start 1000 --end 1100
+
+# 使用自定义模板转发
+python main.py --mode forward --source @source --targets @target --template "📸 转发: {file_name}\n\n{original_text}"
+```
+
+### 命令行参数
+
+```bash
+# 查看所有可用参数
+python main.py --help
+
+# 常用参数说明
+--mode {download,forward}     # 工作流模式
+--source SOURCE              # 源频道
+--start START                # 起始消息ID
+--end END                    # 结束消息ID
+--targets TARGET [TARGET ...] # 目标频道列表（转发模式）
+--template TEMPLATE          # 自定义模板（转发模式）
+--concurrent N               # 最大并发数
+--output DIR                 # 下载目录（本地模式）
 ```
 
 ### 会话文件管理
@@ -152,7 +185,17 @@ python scripts/create_client_session.py
 - [x] 集成进度监控和错误处理
 - [x] **完整功能测试通过** (100% 成功率，多频道上传，智能策略选择)
 
-### Phase 4: 网页版准备 (计划中)
+### Phase 4: 功能集成 (✅ 已完成)
+
+- [x] 集成模板系统到 main.py
+- [x] 集成上传功能到 main.py
+- [x] 实现工作流模式支持
+- [x] 添加命令行参数解析
+- [x] 创建统一的工作流管理
+- [x] 保持向后兼容性
+- [x] **集成测试通过** (100% 成功率，所有功能正常工作)
+
+### Phase 5: 网页版准备 (计划中)
 
 - [ ] API 接口标准化
 - [ ] 配置外部化
