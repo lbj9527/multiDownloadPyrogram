@@ -11,6 +11,6 @@ from .download_manager import DownloadManager
 __all__ = [
     'BaseDownloader',
     'StreamDownloader',
-    'RawDownloader', 
+    'RawDownloader',
     'DownloadManager'
 ]

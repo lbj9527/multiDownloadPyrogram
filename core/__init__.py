@@ -8,6 +8,8 @@ from .message import MessageFetcher, MessageGrouper, MessageProcessor
 from .client import ClientManager, SessionManager
 from .download import DownloadManager, StreamDownloader, RawDownloader
 from .task_distribution import TaskDistributor, DistributionConfig, DistributionMode
+from .template import TemplateEngine, TemplateProcessor, VariableExtractor
+from .upload import UploadManager, BatchUploader, UploadStrategy
 
 __all__ = [
     # 消息处理
@@ -27,5 +29,15 @@ __all__ = [
     # 任务分配
     'TaskDistributor',
     'DistributionConfig',
-    'DistributionMode'
+    'DistributionMode',
+
+    # 模板处理
+    'TemplateEngine',
+    'TemplateProcessor',
+    'VariableExtractor',
+
+    # 上传处理
+    'UploadManager',
+    'BatchUploader',
+    'UploadStrategy'
 ]

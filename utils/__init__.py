@@ -7,11 +7,13 @@ from .file_utils import FileUtils
 from .network_utils import NetworkUtils
 from .logging_utils import setup_logging, get_logger
 from .channel_utils import ChannelUtils
+from .message_utils import MessageUtils
 
 __all__ = [
     'FileUtils',
     'NetworkUtils',
     'ChannelUtils',
+    'MessageUtils',
     'setup_logging',
     'get_logger'
 ]
