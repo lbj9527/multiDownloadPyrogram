@@ -26,34 +26,34 @@ class MessageUtils:
                 'file_size': 0,
                 'mime_type': None
             }
-        
-        media = message.media
+
         file_info = {
             'file_name': f"file_{message.id}",
             'file_size': 0,
             'mime_type': None
         }
-        
-        if hasattr(media, 'document') and media.document:
-            doc = media.document
+
+        # 直接检查消息的媒体属性
+        if message.document:
+            doc = message.document
             file_info['file_name'] = getattr(doc, 'file_name', f"document_{message.id}")
             file_info['file_size'] = getattr(doc, 'file_size', 0)
             file_info['mime_type'] = getattr(doc, 'mime_type', None)
-            
-        elif hasattr(media, 'photo') and media.photo:
-            photo = media.photo
+
+        elif message.photo:
+            photo = message.photo
             file_info['file_name'] = f"photo_{message.id}.jpg"
             file_info['file_size'] = getattr(photo, 'file_size', 0)
             file_info['mime_type'] = "image/jpeg"
             
-        elif hasattr(media, 'video') and media.video:
-            video = media.video
+        elif message.video:
+            video = message.video
             file_info['file_name'] = getattr(video, 'file_name', f"video_{message.id}.mp4")
             file_info['file_size'] = getattr(video, 'file_size', 0)
             file_info['mime_type'] = getattr(video, 'mime_type', "video/mp4")
-            
-        elif hasattr(media, 'audio') and media.audio:
-            audio = media.audio
+
+        elif message.audio:
+            audio = message.audio
             file_info['file_name'] = getattr(audio, 'file_name', f"audio_{message.id}.mp3")
             file_info['file_size'] = getattr(audio, 'file_size', 0)
             file_info['mime_type'] = getattr(audio, 'mime_type', "audio/mpeg")

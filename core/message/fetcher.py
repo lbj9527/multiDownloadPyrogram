@@ -37,8 +37,15 @@ class MessageFetcher(LoggerMixin):
         for i in range(client_count):
             extra = 1 if i < remainder else 0
             end_idx = start_idx + messages_per_client + extra
-            ranges.append(all_message_ids[start_idx:end_idx])
-            self.log_info(f"客户端{i+1} 分配消息范围: {all_message_ids[start_idx]} - {all_message_ids[end_idx-1]} ({len(ranges[i])} 条)")
+            client_range = all_message_ids[start_idx:end_idx]
+            ranges.append(client_range)
+
+            # 只有当范围不为空时才记录日志
+            if client_range:
+                self.log_info(f"客户端{i+1} 分配消息范围: {client_range[0]} - {client_range[-1]} ({len(client_range)} 条)")
+            else:
+                self.log_info(f"客户端{i+1} 无消息分配")
+
             start_idx = end_idx
 
         # 并发获取消息 - 添加错开启动机制

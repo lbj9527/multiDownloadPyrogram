@@ -140,8 +140,23 @@ class ClientManager(LoggerMixin):
                 stop_tasks.append(task)
         
         if stop_tasks:
-            await asyncio.gather(*stop_tasks, return_exceptions=True)
-        
+            # 使用 return_exceptions=True 来捕获并忽略清理时的异常
+            results = await asyncio.gather(*stop_tasks, return_exceptions=True)
+
+            # 检查结果并记录有意义的错误
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    error_msg = str(result).lower()
+                    # 忽略常见的数据库清理错误，这些是正常的
+                    if any(keyword in error_msg for keyword in [
+                        'database', 'sqlite', 'connection', 'closed',
+                        'cannot operate on a closed database'
+                    ]):
+                        # 这些错误是预期的，不需要记录
+                        pass
+                    else:
+                        self.log_error(f"客户端 {self.clients[i].name} 停止时出现意外错误: {result}")
+
         self.log_info("所有客户端已停止")
     
     def get_client_info(self) -> Dict[str, Any]:
