@@ -80,14 +80,29 @@ class RawDownloader(BaseDownloader):
                 # 使用Pyrogram的内置下载方法处理数据中心迁移
                 try:
                     downloaded_path = await client.download_media(message, file_name=str(file_path))
-                    if downloaded_path:
-                        self.log_download_success(file_path, file_path.stat().st_size)
-                        return Path(downloaded_path)
+                    if downloaded_path and Path(downloaded_path).exists():
+                        actual_size = Path(downloaded_path).stat().st_size
+                        if actual_size > 0:
+                            self.log_download_success(file_path, actual_size)
+                            return Path(downloaded_path)
+                        else:
+                            # 检测到0字节文件，可能是AUTH_BYTES_INVALID错误
+                            self.log_error(f"消息 {message.id} 跨数据中心下载失败，文件大小为0，可能是授权问题")
+                            if Path(downloaded_path).exists():
+                                Path(downloaded_path).unlink()
+                            return None
                     else:
                         self.log_error(f"内置方法下载失败")
                         return None
                 except Exception as e:
-                    self.log_error(f"内置方法下载异常: {e}")
+                    # 检查是否是跨数据中心授权失败
+                    if "AUTH_BYTES_INVALID" in str(e):
+                        self.log_error(f"消息 {message.id} 跨数据中心授权失败: {e}")
+                        # 清理可能创建的文件
+                        if file_path.exists():
+                            file_path.unlink()
+                    else:
+                        self.log_error(f"内置方法下载异常: {e}")
                     return None
             
             # 分片下载
@@ -120,8 +135,16 @@ class RawDownloader(BaseDownloader):
                             self.log_info(f"消息 {message.id} 已下载: {progress_mb:.1f} MB")
 
                     except Exception as e:
-                        self.log_error(f"RAW API下载消息 {message.id} 分片失败: {e}")
-                        return None
+                        # 检查是否是跨数据中心授权失败
+                        if "AUTH_BYTES_INVALID" in str(e):
+                            self.log_error(f"RAW API下载消息 {message.id} 跨数据中心授权失败: {e}")
+                            # 清理已创建的文件
+                            if file_path.exists():
+                                file_path.unlink()
+                            return None
+                        else:
+                            self.log_error(f"RAW API下载消息 {message.id} 分片失败: {e}")
+                            return None
             
             # 验证下载完整性
             actual_size = file_path.stat().st_size
@@ -235,8 +258,13 @@ class RawDownloader(BaseDownloader):
                         self.log_info(f"消息 {message.id} 已下载到内存: {progress_mb:.1f} MB")
 
                 except Exception as e:
-                    self.log_error(f"RAW API内存下载消息 {message.id} 分片失败: {e}")
-                    return None
+                    # 检查是否是跨数据中心授权失败
+                    if "AUTH_BYTES_INVALID" in str(e):
+                        self.log_error(f"RAW API内存下载消息 {message.id} 跨数据中心授权失败: {e}")
+                        return None
+                    else:
+                        self.log_error(f"RAW API内存下载消息 {message.id} 分片失败: {e}")
+                        return None
 
             # 转换为bytes
             file_bytes = bytes(file_data)

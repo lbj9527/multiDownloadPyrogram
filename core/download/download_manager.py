@@ -58,6 +58,13 @@ class DownloadManager(LoggerMixin):
                 result = await self.raw_downloader.download(client, message, folder_name)
                 if result:
                     self.download_stats["raw_downloads"] += 1
+                elif result is None:
+                    # RAW API失败，尝试Stream下载作为回退
+                    self.log_info(f"消息 {message.id}: RAW API下载失败，尝试Stream下载回退")
+                    result = await self.stream_downloader.download(client, message, folder_name)
+                    if result:
+                        self.download_stats["stream_downloads"] += 1
+                        self.download_stats["fallback_downloads"] = self.download_stats.get("fallback_downloads", 0) + 1
             else:
                 self.log_info(
                     f"消息 {message.id}: 使用Stream下载 "
@@ -116,6 +123,13 @@ class DownloadManager(LoggerMixin):
                     result = await self.raw_downloader.download_to_memory(client, message)
                     if result:
                         self.download_stats["raw_downloads"] += 1
+                    elif result is None:
+                        # RAW API失败，尝试Stream下载作为回退
+                        self.log_info(f"消息 {message.id}: RAW API内存下载失败，尝试Stream内存下载回退")
+                        result = await self.stream_downloader.download_to_memory(client, message)
+                        if result:
+                            self.download_stats["stream_downloads"] += 1
+                            self.download_stats["fallback_downloads"] = self.download_stats.get("fallback_downloads", 0) + 1
                 else:
                     self.log_info(f"消息 {message.id}: 使用Stream内存下载 (大小: {file_size_mb:.2f} MB, 视频: {is_video})")
                     result = await self.stream_downloader.download_to_memory(client, message)
@@ -235,6 +249,7 @@ class DownloadManager(LoggerMixin):
             "stream_downloads": 0,
             "raw_downloads": 0,
             "memory_downloads": 0,
+            "fallback_downloads": 0,
             "total_size_mb": 0.0
         }
         self.log_info("下载统计已重置")
