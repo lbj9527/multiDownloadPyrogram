@@ -338,6 +338,11 @@ class MultiClientDownloader:
         import logging
         logging.getLogger(self.__class__.__name__).error(message)
 
+    def log_warning(self, message: str):
+        """记录警告日志"""
+        import logging
+        logging.getLogger(self.__class__.__name__).warning(message)
+
 def create_workflow_config_from_args(args) -> Optional[WorkflowConfig]:
     """根据命令行参数创建工作流配置"""
     if args.mode == "download":
@@ -374,7 +379,17 @@ def create_workflow_config_from_args(args) -> Optional[WorkflowConfig]:
 
 def parse_arguments():
     """解析命令行参数"""
-    parser = argparse.ArgumentParser(description="多客户端 Telegram 下载器")
+    parser = argparse.ArgumentParser(
+        description="多客户端 Telegram 下载器",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+使用示例:
+  本地下载: python main.py --mode download --source "@channel" --start 1000 --end 2000
+  转发上传: python main.py --mode forward --source "@source" --targets "@target1" "@target2"
+
+注意: 在 PowerShell 中，频道名称需要用引号包围，如 "@channel"
+        """
+    )
 
     # 工作流模式
     parser.add_argument("--mode", choices=["download", "forward"], default="download",
@@ -382,7 +397,7 @@ def parse_arguments():
 
     # 通用参数
     parser.add_argument("--source", type=str, default="@csdkl",
-                       help="源频道 (默认: @csdkl)")
+                       help="源频道 (默认: @csdkl)，在 PowerShell 中请用引号包围")
     parser.add_argument("--start", type=int, default=72710,
                        help="起始消息ID (默认: 72710)")
     parser.add_argument("--end", type=int, default=72849,
@@ -396,11 +411,42 @@ def parse_arguments():
 
     # 转发参数
     parser.add_argument("--targets", nargs="+",
-                       help="目标频道列表 (转发模式必需)")
+                       help="目标频道列表 (转发模式必需)，在 PowerShell 中请用引号包围")
     parser.add_argument("--template", type=str,
                        help="自定义模板内容")
 
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    # 参数验证
+    validate_arguments(args)
+
+    return args
+
+def validate_arguments(args):
+    """验证命令行参数"""
+    # 验证消息ID范围
+    if args.start >= args.end:
+        raise ValueError(f"起始消息ID ({args.start}) 必须小于结束消息ID ({args.end})")
+
+    if args.start < 1 or args.end < 1:
+        raise ValueError("消息ID必须大于0")
+
+    # 验证并发数
+    if args.concurrent < 1 or args.concurrent > 10:
+        raise ValueError("并发数必须在1-10之间")
+
+    # 验证转发模式的必需参数
+    if args.mode == "forward" and not args.targets:
+        raise ValueError("转发模式必须指定目标频道 (--targets)")
+
+    # 验证频道名称格式
+    if not args.source.startswith('@') and not args.source.startswith('-'):
+        print(f"⚠️ 警告: 源频道 '{args.source}' 可能格式不正确，建议使用 @channel 或 -100xxx 格式")
+
+    if args.targets:
+        for target in args.targets:
+            if not target.startswith('@') and not target.startswith('-'):
+                print(f"⚠️ 警告: 目标频道 '{target}' 可能格式不正确，建议使用 @channel 或 -100xxx 格式")
 
 async def main():
     """
@@ -439,14 +485,16 @@ if __name__ == "__main__":
     print("📝 日志文件: logs/main.log")
     print()
     print("💡 使用说明:")
-    print("   本地下载: python main.py --mode download --source @channel --start 1000 --end 2000")
-    print("   转发上传: python main.py --mode forward --source @source --targets @target1 @target2 --start 1000 --end 1100")
+    print('   本地下载: python main.py --mode download --source "@channel" --start 1000 --end 2000')
+    print('   转发上传: python main.py --mode forward --source "@source" --targets "@target1" "@target2" --start 1000 --end 1100')
     print("   查看帮助: python main.py --help")
+    print()
+    print("📝 注意: 在 PowerShell 中，频道名称需要用引号包围，如 \"@channel\"")
     print()
 
     # 检查TgCrypto
     try:
-        import tgcrypto
+        import tgcrypto  # noqa: F401
         print("✅ TgCrypto 已启用")
     except ImportError:
         print("⚠️ TgCrypto 未安装，下载速度可能较慢")

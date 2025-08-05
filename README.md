@@ -86,27 +86,61 @@ pip install -r requirements.txt
 
 ## 🚀 使用方法
 
+### 🚀 快速开始
+
+```bash
+# 使用默认配置运行（下载 @csdkl 频道的消息 72710-72849）
+python main.py
+
+# 在 Windows PowerShell 中运行
+python main.py
+```
+
+### ⚠️ 重要提示
+
+**在 Windows PowerShell 中使用自定义参数时，频道名称必须用引号包围！**
+
+```powershell
+# ✅ 正确用法 (PowerShell)
+python main.py --mode download --source "@luanlunluoli" --start 8255 --end 8412
+
+# ❌ 错误用法 (PowerShell) - 会导致参数解析错误
+python main.py --mode download --source @luanlunluoli --start 8255 --end 8412
+```
+
 ### 基础下载功能（默认模式）
 
 ```bash
-# 运行多客户端下载器（本地下载模式）
+# 运行多客户端下载器（使用默认配置：@csdkl 频道，消息 72710-72849）
 python main.py
 
-# 自定义参数的本地下载
-python main.py --mode download --source @channel_name --start 1000 --end 2000 --output ./downloads
+# 自定义参数的本地下载 (Linux/macOS)
+python main.py --mode download --source "@channel_name" --start 1000 --end 2000 --output "./downloads"
+
+# 自定义参数的本地下载 (Windows PowerShell)
+python main.py --mode download --source "@channel_name" --start 1000 --end 2000 --output "./downloads"
+
+# 实际示例：下载 @luanlunluoli 频道的消息 8255-8412 (Windows PowerShell)
+python main.py --mode download --source "@luanlunluoli" --start 8255 --end 8412
 ```
 
 ### 转发上传功能（新增）
 
 ```bash
-# 转发到单个频道
-python main.py --mode forward --source @source_channel --targets @target_channel --start 1000 --end 1100
+# 转发到单个频道 (Linux/macOS)
+python main.py --mode forward --source "@source_channel" --targets "@target_channel" --start 1000 --end 1100
 
-# 转发到多个频道
-python main.py --mode forward --source @source_channel --targets @target1 @target2 @target3 --start 1000 --end 1100
+# 转发到单个频道 (Windows PowerShell)
+python main.py --mode forward --source "@source_channel" --targets "@target_channel" --start 1000 --end 1100
 
-# 使用自定义模板转发
-python main.py --mode forward --source @source --targets @target --template "📸 转发: {file_name}\n\n{original_text}"
+# 转发到多个频道 (Linux/macOS)
+python main.py --mode forward --source "@source_channel" --targets "@target1" "@target2" "@target3" --start 1000 --end 1100
+
+# 转发到多个频道 (Windows PowerShell)
+python main.py --mode forward --source "@source_channel" --targets "@target1" "@target2" "@target3" --start 1000 --end 1100
+
+# 使用自定义模板转发 (Windows PowerShell)
+python main.py --mode forward --source "@source" --targets "@target" --template "📸 转发: {file_name}\n\n{original_text}"
 ```
 
 ### 命令行参数
@@ -116,14 +150,52 @@ python main.py --mode forward --source @source --targets @target --template "�
 python main.py --help
 
 # 常用参数说明
---mode {download,forward}     # 工作流模式
---source SOURCE              # 源频道
---start START                # 起始消息ID
---end END                    # 结束消息ID
---targets TARGET [TARGET ...] # 目标频道列表（转发模式）
---template TEMPLATE          # 自定义模板（转发模式）
---concurrent N               # 最大并发数
---output DIR                 # 下载目录（本地模式）
+--mode {download,forward}     # 工作流模式 (默认: download)
+--source SOURCE              # 源频道 (默认: @csdkl，PowerShell中需要引号)
+--start START                # 起始消息ID (默认: 72710)
+--end END                    # 结束消息ID (默认: 72849)
+--targets TARGET [TARGET ...] # 目标频道列表（转发模式必需，PowerShell中需要引号）
+--template TEMPLATE          # 自定义模板（转发模式可选）
+--concurrent N               # 最大并发数 (默认: 3)
+--output DIR                 # 下载目录（本地模式，默认: downloads）
+```
+
+### 🖥️ 不同操作系统的使用说明
+
+#### Windows PowerShell
+
+```powershell
+# 频道名称必须用引号包围
+python main.py --mode download --source "@luanlunluoli" --start 8255 --end 8412
+
+# 多个目标频道也需要分别用引号包围
+python main.py --mode forward --source "@source" --targets "@target1" "@target2"
+```
+
+#### Linux / macOS / Git Bash
+
+```bash
+# 可以不用引号（但用引号也是安全的）
+python main.py --mode download --source @luanlunluoli --start 8255 --end 8412
+
+# 或者使用引号（推荐，更安全）
+python main.py --mode download --source "@luanlunluoli" --start 8255 --end 8412
+```
+
+### 🔧 常见问题解决
+
+#### 问题：`argument --source: expected one argument`
+
+**原因**：在 PowerShell 中，`@` 符号有特殊含义，导致参数解析失败。
+
+**解决方案**：
+
+```powershell
+# ❌ 错误
+python main.py --source @channel
+
+# ✅ 正确
+python main.py --source "@channel"
 ```
 
 ### 会话文件管理
