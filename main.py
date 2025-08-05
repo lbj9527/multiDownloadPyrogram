@@ -350,9 +350,7 @@ def create_workflow_config_from_args(args) -> Optional[WorkflowConfig]:
             workflow_type=WorkflowType.LOCAL_DOWNLOAD,
             source_channel=args.source,
             message_range=(args.start, args.end),
-            download_directory=args.output or "downloads",
-            create_subfolder=True,
-            max_concurrent=args.concurrent
+            create_subfolder=True
         )
     elif args.mode == "forward":
         if not args.targets:
@@ -371,8 +369,7 @@ def create_workflow_config_from_args(args) -> Optional[WorkflowConfig]:
             source_channel=args.source,
             message_range=(args.start, args.end),
             target_channels=args.targets,
-            template_config=template_config,
-            max_concurrent=args.concurrent
+            template_config=template_config
         )
     else:
         return None
@@ -402,12 +399,9 @@ def parse_arguments():
                        help="起始消息ID (默认: 72710)")
     parser.add_argument("--end", type=int, default=72849,
                        help="结束消息ID (默认: 72849)")
-    parser.add_argument("--concurrent", type=int, default=3,
-                       help="最大并发数 (默认: 3)")
-
     # 本地下载参数
-    parser.add_argument("--output", type=str,
-                       help="下载目录 (默认: downloads)")
+    # 注意：下载目录由 config/settings.py 中的 DownloadConfig.download_dir 配置
+    # 并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
 
     # 转发参数
     parser.add_argument("--targets", nargs="+",
@@ -431,9 +425,7 @@ def validate_arguments(args):
     if args.start < 1 or args.end < 1:
         raise ValueError("消息ID必须大于0")
 
-    # 验证并发数
-    if args.concurrent < 1 or args.concurrent > 10:
-        raise ValueError("并发数必须在1-10之间")
+    # 注意：并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
 
     # 验证转发模式的必需参数
     if args.mode == "forward" and not args.targets:
@@ -488,6 +480,10 @@ if __name__ == "__main__":
     print('   本地下载: python main.py --mode download --source "@channel" --start 1000 --end 2000')
     print('   转发上传: python main.py --mode forward --source "@source" --targets "@target1" "@target2" --start 1000 --end 1100')
     print("   查看帮助: python main.py --help")
+    print()
+    print("⚙️ 配置说明:")
+    print("   下载目录: 在 config/settings.py 的 DownloadConfig.download_dir 中配置")
+    print("   并发数量: 由 config/settings.py 的 TelegramConfig.session_names 数量决定")
     print()
     print("📝 注意: 在 PowerShell 中，频道名称需要用引号包围，如 \"@channel\"")
     print()

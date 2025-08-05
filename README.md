@@ -115,10 +115,10 @@ python main.py --mode download --source @luanlunluoli --start 8255 --end 8412
 python main.py
 
 # 自定义参数的本地下载 (Linux/macOS)
-python main.py --mode download --source "@channel_name" --start 1000 --end 2000 --output "./downloads"
+python main.py --mode download --source "@channel_name" --start 1000 --end 2000
 
 # 自定义参数的本地下载 (Windows PowerShell)
-python main.py --mode download --source "@channel_name" --start 1000 --end 2000 --output "./downloads"
+python main.py --mode download --source "@channel_name" --start 1000 --end 2000
 
 # 实际示例：下载 @luanlunluoli 频道的消息 8255-8412 (Windows PowerShell)
 python main.py --mode download --source "@luanlunluoli" --start 8255 --end 8412
@@ -156,8 +156,10 @@ python main.py --help
 --end END                    # 结束消息ID (默认: 72849)
 --targets TARGET [TARGET ...] # 目标频道列表（转发模式必需，PowerShell中需要引号）
 --template TEMPLATE          # 自定义模板（转发模式可选）
---concurrent N               # 最大并发数 (默认: 3)
---output DIR                 # 下载目录（本地模式，默认: downloads）
+
+# 配置说明：
+# 下载目录：在 config/settings.py 的 DownloadConfig.download_dir 中配置
+# 并发数量：由 config/settings.py 的 TelegramConfig.session_names 数量决定
 ```
 
 ### 🖥️ 不同操作系统的使用说明

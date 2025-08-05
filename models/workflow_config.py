@@ -35,16 +35,16 @@ class WorkflowConfig:
     message_range: Tuple[int, int] = (1, 100)
     
     # 本地下载配置
-    download_directory: Optional[str] = None
+    # 注意：下载目录由 config/settings.py 中的 DownloadConfig.download_dir 配置
     create_subfolder: bool = True       # 是否创建子文件夹
     subfolder_pattern: str = "{channel}_{date}"  # 子文件夹命名模式
-    
+
     # 转发配置
     target_channels: List[str] = field(default_factory=list)
     template_config: Optional[TemplateConfig] = None
-    
+
     # 执行配置
-    max_concurrent: int = 3             # 最大并发数
+    # 注意：并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
     batch_size: int = 10               # 批处理大小
     delay_between_batches: float = 1.0  # 批次间延迟（秒）
     
@@ -107,8 +107,7 @@ class WorkflowConfig:
         if self.message_range[0] > self.message_range[1]:
             raise ValueError("消息范围起始值不能大于结束值")
         
-        if self.max_concurrent <= 0:
-            raise ValueError("最大并发数必须大于0")
+        # 注意：并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
     
     def is_local_download(self) -> bool:
         """是否为本地下载工作流"""
@@ -213,8 +212,9 @@ class WorkflowConfig:
         
         base_time = message_count * base_time_per_message
         
-        # 考虑并发因素
-        concurrent_factor = min(self.max_concurrent, message_count) / message_count
+        # 考虑并发因素（使用默认3个客户端）
+        max_concurrent = 3  # 由 config/settings.py 中的 session_names 数量决定
+        concurrent_factor = min(max_concurrent, message_count) / message_count
         estimated_time = base_time * concurrent_factor
         
         # 考虑批次延迟
@@ -232,11 +232,9 @@ class WorkflowConfig:
             "description": self.description,
             "source_channel": self.source_channel,
             "message_range": list(self.message_range),
-            "download_directory": self.download_directory,
             "create_subfolder": self.create_subfolder,
             "subfolder_pattern": self.subfolder_pattern,
             "target_channels": self.target_channels,
-            "max_concurrent": self.max_concurrent,
             "batch_size": self.batch_size,
             "delay_between_batches": self.delay_between_batches,
             "file_types": self.file_types,

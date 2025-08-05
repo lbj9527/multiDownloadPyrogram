@@ -110,17 +110,17 @@ multiDownloadPyrogram/
 
 ```python
 # 本地下载工作流 - 已实现
+# 注意：下载目录由 config/settings.py 中的 DownloadConfig.download_dir 配置
+# 注意：并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
 config = WorkflowConfig(
     workflow_type=WorkflowType.LOCAL_DOWNLOAD,
     source_channel="@example_channel",
     message_range=(1000, 2000),
-    download_directory="./downloads/example_channel",
     create_subfolder=True,
     subfolder_pattern="{channel}_{date}",
     file_types=["jpg", "png", "mp4"],
     min_file_size=1024,
-    max_file_size=50*1024*1024,
-    max_concurrent=3
+    max_file_size=50*1024*1024
 )
 
 # 实际使用现有的下载管理器
@@ -158,8 +158,7 @@ config = WorkflowConfig(
     source_channel="@source_channel",
     target_channels=["@target1", "@target2", "@target3"],
     message_range=(1000, 2000),
-    template_config=template_config,
-    max_concurrent=3
+    template_config=template_config
 )
 
 # 实际实现的转发流程
@@ -209,7 +208,7 @@ class WorkflowConfig:
     message_range: Tuple[int, int]
 
     # 本地下载配置
-    download_directory: Optional[str] = None
+    # 注意：下载目录由 config/settings.py 中的 DownloadConfig.download_dir 配置
     create_subfolder: bool = True
     subfolder_pattern: str = "{channel}_{date}"
 
@@ -218,7 +217,7 @@ class WorkflowConfig:
     template_config: Optional[TemplateConfig] = None
 
     # 执行配置
-    max_concurrent: int = 3
+    # 注意：并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
     batch_size: int = 10
     delay_between_batches: float = 1.0
 
@@ -415,7 +414,6 @@ POST /api/download/local
 {
     "channel": "@source_channel",
     "message_range": [1000, 2000],
-    "download_directory": "/path/to/downloads"
 }
 
 # 转发接口
@@ -695,6 +693,7 @@ class BatchUploader(LoggerMixin):
     """✅ 已实现：批量并发上传控制"""
 
     def __init__(self, max_concurrent: int = 3):
+        # 注意：实际使用中，并发数由 config/settings.py 中的 session_names 数量决定
         self.max_concurrent = max_concurrent
         self.upload_manager = UploadManager()
 
@@ -729,7 +728,7 @@ class WorkflowConfig:
     message_range: Tuple[int, int] = (1, 100)
 
     # 本地下载配置
-    download_directory: Optional[str] = None
+    # 注意：下载目录由 config/settings.py 中的 DownloadConfig.download_dir 配置
     create_subfolder: bool = True
     subfolder_pattern: str = "{channel}_{date}"
 
@@ -741,7 +740,6 @@ class WorkflowConfig:
     file_types: List[str] = field(default_factory=list)
     min_file_size: int = 0
     max_file_size: int = 0
-    max_concurrent: int = 3
     priority: PriorityLevel = PriorityLevel.NORMAL
 
     def is_local_download(self) -> bool:
@@ -816,13 +814,12 @@ async def execute_complete_forward_workflow():
         target_channels=["@target1", "@target2", "@target3"],
         message_range=(1000, 1100),
         template_config=template_config,
-        max_concurrent=3
-    )
+        )
 
     # 3. 初始化组件
     download_manager = DownloadManager(config)
     template_processor = TemplateProcessor()
-    batch_uploader = BatchUploader(max_concurrent=3)
+    batch_uploader = BatchUploader()
 
     # 4. 执行工作流
     messages = await message_fetcher.fetch_messages(
@@ -945,10 +942,8 @@ local_config = WorkflowConfig(
     workflow_type=WorkflowType.LOCAL_DOWNLOAD,
     source_channel="@source",
     message_range=(1000, 2000),
-    download_directory="./downloads",
     create_subfolder=True,
-    file_types=["jpg", "png", "mp4"],
-    max_concurrent=3
+    file_types=["jpg", "png", "mp4"]
 )
 
 # 转发上传工作流 - 已实现
@@ -964,8 +959,7 @@ forward_config = WorkflowConfig(
     source_channel="@source",
     target_channels=["@target1", "@target2", "@target3"],
     message_range=(1000, 1100),
-    template_config=template_config,
-    max_concurrent=2
+    template_config=template_config
 )
 
 # 实际使用示例
@@ -975,7 +969,7 @@ from core.template.template_processor import TemplateProcessor
 
 # 创建管理器
 upload_manager = UploadManager()
-batch_uploader = BatchUploader(max_concurrent=3)
+batch_uploader = BatchUploader()
 template_processor = TemplateProcessor()
 
 # 执行转发流程
