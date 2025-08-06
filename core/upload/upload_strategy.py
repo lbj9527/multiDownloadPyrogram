@@ -149,16 +149,12 @@ class UploadStrategy(LoggerMixin):
             "max_caption_length": 1024,
             "compress": True,  # 图片默认压缩
         }
-        
-        # 大图片可能需要作为文档发送
+
+        # 保持原始媒体类型，不降级为文档
+        # 大图片仍然使用 send_photo，让 Telegram 处理大小限制
         if task.file_size > self.size_thresholds["medium"]:
-            config.update({
-                "method": "send_document",
-                "compress": False,
-                "max_caption_length": 1024,
-            })
-            self.log_info(f"大图片 {task.file_name} ({task.get_file_size_formatted()}) 将作为文档发送")
-        
+            self.log_info(f"大图片 {task.file_name} ({task.get_file_size_formatted()}) 保持图片格式上传")
+
         return config
     
     def _get_video_upload_config(self, task: UploadTask) -> Dict[str, Any]:
@@ -169,15 +165,12 @@ class UploadStrategy(LoggerMixin):
             "max_caption_length": 1024,
             "supports_streaming": True,
         }
-        
-        # 超大视频作为文档发送
+
+        # 保持原始媒体类型，不降级为文档
+        # 大视频仍然使用 send_video，让 Telegram 处理大小限制
         if task.file_size > self.size_thresholds["large"]:
-            config.update({
-                "method": "send_document",
-                "supports_streaming": False,
-            })
-            self.log_info(f"大视频 {task.file_name} ({task.get_file_size_formatted()}) 将作为文档发送")
-        
+            self.log_info(f"大视频 {task.file_name} ({task.get_file_size_formatted()}) 保持视频格式上传")
+
         return config
     
     def _get_audio_upload_config(self, task: UploadTask) -> Dict[str, Any]:

@@ -197,6 +197,8 @@
     - `determine_upload_type()`, `get_upload_config()`
     - `get_size_category()`, `estimate_upload_time()`
     - `should_compress()`, `validate_upload_task()`
+    - `_get_photo_upload_config()` - ✅ **修改：保持原始图片格式**
+    - `_get_video_upload_config()` - ✅ **修改：保持原始视频格式**
 
 - [core/upload/upload_manager.py](#-coreuploadupload_managerpy) - 上传管理器
 
