@@ -428,7 +428,7 @@ def create_workflow_config_from_args(args) -> Optional[WorkflowConfig]:
             template_id="default_forward",
             name="默认转发模板",
             mode=TemplateMode.CUSTOM,
-            content=args.template or "📸 来自 {source_channel} 的内容\n\n{original_text}\n\n📁 文件: {file_name} ({file_size_formatted})"
+            content=args.template or "📸 来自 {source_channel} 的内容\n\n{original_text}{original_caption}\n\n📁 文件: {file_name} ({file_size_formatted})"
         )
 
         return WorkflowConfig(

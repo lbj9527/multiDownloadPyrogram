@@ -30,6 +30,7 @@
     - `_forward_client_messages()` - ✅ **新增单客户端转发任务**
     - `_summarize_forward_results()` - ✅ **新增转发结果汇总**
     - `_print_final_results()`, `_cleanup()`, `log_info()`, `log_error()`
+  - `create_workflow_config_from_args()` - ✅ **修复：添加 original_caption 变量**
   - `main()` 函数
 
 ### ⚙️ 配置模块
