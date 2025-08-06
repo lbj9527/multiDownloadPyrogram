@@ -27,7 +27,8 @@ class BatchUploader(LoggerMixin):
         self.upload_semaphore = asyncio.Semaphore(max_concurrent)
     
     async def upload_batch(self, client: Client, tasks: List[UploadTask],
-                          progress_callback: Optional[Callable] = None) -> BatchUploadResult:
+                          progress_callback: Optional[Callable] = None,
+                          client_name: str = None) -> BatchUploadResult:
         """
         批量上传文件
         
@@ -55,7 +56,7 @@ class BatchUploader(LoggerMixin):
         try:
             # 创建上传任务
             upload_coroutines = [
-                self._upload_single_task(client, task, batch_result, progress_callback)
+                self._upload_single_task(client, task, batch_result, progress_callback, client_name)
                 for task in tasks
             ]
             
@@ -73,7 +74,8 @@ class BatchUploader(LoggerMixin):
     
     async def _upload_single_task(self, client: Client, task: UploadTask,
                                  batch_result: BatchUploadResult,
-                                 progress_callback: Optional[Callable] = None):
+                                 progress_callback: Optional[Callable] = None,
+                                 client_name: str = None):
         """
         上传单个任务（带并发控制）
         
@@ -95,7 +97,7 @@ class BatchUploader(LoggerMixin):
                 
                 # 执行上传
                 success = await self.upload_manager.upload_task(
-                    client, task, task_progress_callback
+                    client, task, task_progress_callback, client_name
                 )
                 
                 # 更新批量结果

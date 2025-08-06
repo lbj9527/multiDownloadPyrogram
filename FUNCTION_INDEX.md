@@ -31,6 +31,7 @@
     - `_summarize_forward_results()` - ✅ **新增转发结果汇总**
     - `_print_final_results()`, `_cleanup()`, `log_info()`, `log_error()`
   - `create_workflow_config_from_args()` - ✅ **修复：添加 original_caption 变量**
+  - `_initialize_account_info()` - ✅ **新增：初始化账户信息**
   - `main()` 函数
 
 ### ⚙️ 配置模块
@@ -162,6 +163,18 @@
 
   - `setup_logging()` 函数
   - `get_logger()` 函数
+
+- [utils/account_info.py](#-utilsaccount_infopy) - ✅ **新增：账户信息管理**
+
+  - `AccountInfo` 类 - ✅ **新增：账户信息数据类**
+    - `display_name`, `caption_limit` 属性
+    - `to_dict()` 方法
+  - `AccountInfoManager` 类 - ✅ **新增：账户信息管理器**
+    - `get_account_info()` - 获取单个客户端账户信息
+    - `get_all_accounts_info()` - 获取所有客户端账户信息
+    - `is_premium_user()` - 检查 Premium 状态
+    - `get_caption_limit()` - 获取 Caption 长度限制
+    - `log_accounts_summary()` - 显示账户摘要
 
 - [utils/async_context_manager.py](#-utilsasync_context_managerpy) - ✅ **新增异步上下文管理器**
   - `SafeClientManager` 类 - 安全的客户端管理器

@@ -67,6 +67,23 @@
   - 确保转发的媒体文件正确显示原始说明文字
   - 支持纯文本、纯 Caption、混合内容等各种情况
 
+### 新增功能
+
+- ✅ **新增账户信息管理系统** (`utils/account_info.py`)
+
+  - 新增 `AccountInfo` 类，存储用户详细信息包括 Premium 状态
+  - 新增 `AccountInfoManager` 类，管理多客户端账户信息
+  - 自动获取所有客户端的 Premium 状态和基本信息
+  - 提供账户信息缓存和摘要功能
+
+- ✅ **新增 Premium 用户 Caption 长度优化** (`core/upload/upload_manager.py`, `core/upload/batch_uploader.py`)
+
+  - 根据用户 Premium 状态动态调整 Caption 长度限制
+  - 普通用户：1024 字符限制
+  - Premium 用户：4096 字符限制（4 倍提升）
+  - 程序启动时自动检测所有客户端的 Premium 状态
+  - 上传时显示用户类型和对应的长度限制
+
 ### 性能对比
 
 | 模式              | 客户端使用 | 并发类型 | 预期性能       |

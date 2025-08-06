@@ -28,7 +28,8 @@ class UploadManager(LoggerMixin):
         }
     
     async def upload_task(self, client: Client, task: UploadTask,
-                         progress_callback: Optional[Callable] = None) -> bool:
+                         progress_callback: Optional[Callable] = None,
+                         client_name: str = None) -> bool:
         """
         上传单个任务
         
@@ -63,7 +64,7 @@ class UploadManager(LoggerMixin):
                     progress_callback(task, current, total)
             
             # 执行上传
-            message = await self._execute_upload(client, task, upload_config, progress_wrapper)
+            message = await self._execute_upload(client, task, upload_config, progress_wrapper, client_name)
             
             if message:
                 task.complete_upload(message.id)
@@ -87,7 +88,8 @@ class UploadManager(LoggerMixin):
             self.upload_stats["total_bytes"] += task.file_size
     
     async def _execute_upload(self, client: Client, task: UploadTask,
-                            config: Dict[str, Any], progress_callback: Callable) -> Optional[Message]:
+                            config: Dict[str, Any], progress_callback: Callable,
+                            client_name: str = None) -> Optional[Message]:
         """
         执行具体的上传操作
         
@@ -107,7 +109,7 @@ class UploadManager(LoggerMixin):
         file_data.name = task.file_name
         
         # 准备说明文字
-        caption = self._prepare_caption(task, config)
+        caption = self._prepare_caption(task, config, client_name)
         
         # 根据上传方法执行不同的上传操作
         if method_name == "send_photo":
@@ -167,33 +169,46 @@ class UploadManager(LoggerMixin):
         else:
             raise ValueError(f"不支持的上传方法: {method_name}")
     
-    def _prepare_caption(self, task: UploadTask, config: Dict[str, Any]) -> Optional[str]:
+    def _prepare_caption(self, task: UploadTask, config: Dict[str, Any], client_name: str = None) -> Optional[str]:
         """
         准备说明文字
-        
+
         Args:
             task: 上传任务
             config: 上传配置
-            
+            client_name: 客户端名称，用于获取Premium状态
+
         Returns:
             Optional[str]: 处理后的说明文字
         """
         if not config.get("supports_caption", True):
             return None
-        
+
         # 优先使用格式化内容
         caption = task.formatted_content or task.caption
-        
+
         if not caption:
             return None
-        
+
+        # 根据Premium状态动态获取长度限制
+        from utils.account_info import get_account_info_manager
+        account_manager = get_account_info_manager()
+
+        if client_name:
+            max_length = account_manager.get_caption_limit(client_name)
+            is_premium = account_manager.is_premium_user(client_name)
+            user_type = "Premium用户" if is_premium else "普通用户"
+        else:
+            # 回退到配置中的默认值
+            max_length = config.get("max_caption_length", 1024)
+            user_type = "默认"
+
         # 检查长度限制
-        max_length = config.get("max_caption_length", 1024)
         if len(caption) > max_length:
             # 截断并添加省略号
             caption = caption[:max_length-3] + "..."
-            self.log_warning(f"说明文字过长，已截断到 {max_length} 字符")
-        
+            self.log_warning(f"说明文字过长，已截断到 {max_length} 字符 ({user_type})")
+
         return caption
     
     def _update_progress(self, task: UploadTask, current: int, total: int):

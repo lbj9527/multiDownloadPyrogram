@@ -135,10 +135,32 @@ class MultiClientDownloader:
         
         # 启动客户端
         await self.client_manager.start_all_clients()
-        
+
+        # 初始化账户信息
+        await self._initialize_account_info()
+
         # 显示客户端信息
         client_info = self.client_manager.get_client_info()
         self.log_info(f"✅ 成功启动 {client_info['active_clients']} 个客户端")
+
+    async def _initialize_account_info(self):
+        """初始化账户信息"""
+        from utils.account_info import get_account_info_manager
+
+        self.log_info("🔍 获取账户信息...")
+        account_manager = get_account_info_manager()
+
+        # 使用与任务分配器相同的client_name格式
+        clients_dict = {}
+        for client in self.clients:
+            client_name = client.name  # 使用client.name作为key
+            clients_dict[client_name] = client
+
+        # 获取所有客户端的账户信息
+        await account_manager.get_all_accounts_info(clients_dict)
+
+        # 显示账户信息摘要
+        account_manager.log_accounts_summary()
     
     async def _fetch_messages(self, channel: str, start_id: int, end_id: int) -> List:
         """获取消息"""
@@ -270,7 +292,7 @@ class MultiClientDownloader:
 
                 # 4. 批量上传
                 if upload_tasks:
-                    batch_result = await self.batch_uploader.upload_batch(client, upload_tasks)
+                    batch_result = await self.batch_uploader.upload_batch(client, upload_tasks, client_name=client_name)
                     if batch_result.is_completed():
                         successful_forwards += 1
                         self.log_info(f"{client_name} 消息 {message.id} 转发成功: {batch_result.get_success_rate():.1%}")
