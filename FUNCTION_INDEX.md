@@ -26,6 +26,9 @@
   - `MultiClientDownloader` 类
     - `__init__()`, `run_download()`, `_start_monitoring()`, `_initialize_clients()`
     - `_fetch_messages()`, `_distribute_tasks()`, `_execute_downloads()`
+    - `_execute_forward_workflow()` - ✅ **新增并发转发工作流**
+    - `_forward_client_messages()` - ✅ **新增单客户端转发任务**
+    - `_summarize_forward_results()` - ✅ **新增转发结果汇总**
     - `_print_final_results()`, `_cleanup()`, `log_info()`, `log_error()`
   - `main()` 函数
 
@@ -155,8 +158,17 @@
     - `get_media_type()`, `has_media()`, `get_content_preview()`
 
 - [utils/logging_utils.py](#-utilslogging_utilspy) - 日志工具
+
   - `setup_logging()` 函数
   - `get_logger()` 函数
+
+- [utils/async_context_manager.py](#-utilsasync_context_managerpy) - ✅ **新增异步上下文管理器**
+  - `SafeClientManager` 类 - 安全的客户端管理器
+    - `safe_stop_all()`, `_safe_stop_client()`, `_force_cleanup()`, `_wait_for_background_tasks()`
+  - `managed_clients()` - 异步上下文管理器
+  - `suppress_pyrogram_errors()` - 抑制 Pyrogram 清理错误
+  - `AsyncTaskCleaner` 类 - 异步任务清理器
+    - `cancel_remaining_tasks()`, `graceful_shutdown()`
 
 ## 📤 上传模块 (Phase 3)
 

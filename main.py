@@ -12,6 +12,7 @@ from typing import List, Optional
 from config.settings import AppConfig
 from utils.logging_utils import setup_logging
 from utils.channel_utils import ChannelUtils
+from utils.async_context_manager import SafeClientManager, suppress_pyrogram_errors, AsyncTaskCleaner
 
 # 核心模块
 from core.client import ClientManager
@@ -194,8 +195,8 @@ class MultiClientDownloader:
         await asyncio.gather(*download_tasks, return_exceptions=True)
 
     async def _execute_forward_workflow(self, messages: List):
-        """执行转发上传工作流"""
-        self.log_info("📤 执行转发上传工作流...")
+        """执行转发上传工作流（并发版本）"""
+        self.log_info("📤 执行并发转发上传工作流...")
 
         if not self.workflow_config or not self.workflow_config.target_channels:
             raise ValueError("转发工作流需要配置目标频道")
@@ -203,10 +204,30 @@ class MultiClientDownloader:
         if not self.workflow_config.template_config:
             raise ValueError("转发工作流需要配置模板")
 
-        # 使用第一个客户端进行操作
-        client = self.clients[0] if self.clients else None
-        if not client:
-            raise RuntimeError("没有可用的客户端")
+        # 1. 分组和分配任务（复用下载模式的分配逻辑）
+        distribution_result = await self._distribute_tasks(messages)
+
+        # 2. 创建并发转发任务
+        forward_tasks = []
+        for assignment in distribution_result.client_assignments:
+            client = self.client_manager.get_client_by_name(assignment.client_name)
+            if client:
+                task = self._forward_client_messages(client, assignment)
+                forward_tasks.append(task)
+
+        # 3. 并发执行转发
+        self.log_info(f"🚀 启动 {len(forward_tasks)} 个客户端并发转发...")
+        results = await asyncio.gather(*forward_tasks, return_exceptions=True)
+
+        # 4. 汇总结果
+        self._summarize_forward_results(results, len(messages))
+
+    async def _forward_client_messages(self, client, assignment):
+        """单个客户端的转发任务"""
+        client_name = assignment.client_name
+        messages = assignment.get_all_messages()
+
+        self.log_info(f"🔄 {client_name} 开始转发 {len(messages)} 个文件...")
 
         successful_forwards = 0
         failed_forwards = 0
@@ -219,7 +240,7 @@ class MultiClientDownloader:
                 )
 
                 if not download_result:
-                    self.log_warning(f"消息 {message.id} 下载失败，跳过")
+                    self.log_warning(f"{client_name} 消息 {message.id} 下载失败，跳过")
                     failed_forwards += 1
                     continue
 
@@ -231,7 +252,7 @@ class MultiClientDownloader:
                 )
 
                 if not processed_result.get("success", True):
-                    self.log_warning(f"消息 {message.id} 模板处理失败: {processed_result.get('error', 'Unknown error')}")
+                    self.log_warning(f"{client_name} 消息 {message.id} 模板处理失败: {processed_result.get('error', 'Unknown error')}")
 
                 # 3. 创建上传任务
                 upload_tasks = []
@@ -252,24 +273,53 @@ class MultiClientDownloader:
                     batch_result = await self.batch_uploader.upload_batch(client, upload_tasks)
                     if batch_result.is_completed():
                         successful_forwards += 1
-                        self.log_info(f"消息 {message.id} 转发成功: {batch_result.get_success_rate():.1%}")
+                        self.log_info(f"{client_name} 消息 {message.id} 转发成功: {batch_result.get_success_rate():.1%}")
                     else:
                         failed_forwards += 1
-                        self.log_error(f"消息 {message.id} 转发失败")
+                        self.log_error(f"{client_name} 消息 {message.id} 转发失败")
                 else:
                     failed_forwards += 1
-                    self.log_error(f"消息 {message.id} 没有创建上传任务")
+                    self.log_error(f"{client_name} 消息 {message.id} 没有创建上传任务")
 
             except Exception as e:
                 failed_forwards += 1
-                self.log_error(f"处理消息 {message.id} 时出错: {e}")
+                self.log_error(f"{client_name} 处理消息 {message.id} 时出错: {e}")
 
-        self.log_info(f"转发工作流完成: 成功 {successful_forwards}, 失败 {failed_forwards}")
+        self.log_info(f"✅ {client_name} 转发任务完成: 成功 {successful_forwards}, 失败 {failed_forwards}")
 
-        # 更新统计信息
-        self.stats_collector.set_total_messages(len(messages))
-        for i in range(successful_forwards):
-            self.stats_collector.update_download_progress(True, i, "forward_client", 0)
+        # 返回结果统计
+        return {
+            "client_name": client_name,
+            "successful_forwards": successful_forwards,
+            "failed_forwards": failed_forwards,
+            "total_messages": len(messages)
+        }
+
+    def _summarize_forward_results(self, results: List, total_messages: int):
+        """汇总转发结果"""
+        total_successful = 0
+        total_failed = 0
+
+        for result in results:
+            if isinstance(result, Exception):
+                self.log_error(f"客户端转发任务异常: {result}")
+                continue
+
+            if isinstance(result, dict):
+                total_successful += result.get("successful_forwards", 0)
+                total_failed += result.get("failed_forwards", 0)
+
+                # 更新统计信息
+                client_name = result.get("client_name", "unknown")
+                for i in range(result.get("successful_forwards", 0)):
+                    self.stats_collector.update_download_progress(True, None, client_name, 0)
+                for i in range(result.get("failed_forwards", 0)):
+                    self.stats_collector.update_download_progress(False, None, client_name, 0)
+
+        self.log_info(f"🎉 并发转发工作流完成: 成功 {total_successful}, 失败 {total_failed}")
+
+        # 设置统计总数
+        self.stats_collector.set_total_messages(total_messages)
     
     async def _download_client_messages(self, client, assignment, channel: str):
         """单个客户端的下载任务"""
@@ -323,8 +373,20 @@ class MultiClientDownloader:
         """清理资源"""
         self.log_info("🧹 清理资源...")
 
-        # 停止客户端
-        await self.client_manager.stop_all_clients()
+        try:
+            # 使用安全的客户端管理器停止所有客户端
+            if self.clients:
+                safe_manager = SafeClientManager(self.clients)
+                await safe_manager.safe_stop_all()
+            else:
+                # 如果没有直接的客户端列表，使用原有方法
+                await self.client_manager.stop_all_clients()
+
+            # 优雅关闭剩余任务
+            await AsyncTaskCleaner.graceful_shutdown(timeout=3.0)
+
+        except Exception as e:
+            self.log_error(f"清理过程中出现错误: {e}")
 
         self.log_info("✅ 清理完成")
     
@@ -337,6 +399,11 @@ class MultiClientDownloader:
         """记录错误日志"""
         import logging
         logging.getLogger(self.__class__.__name__).error(message)
+
+    def log_debug(self, message: str):
+        """记录调试日志"""
+        import logging
+        logging.getLogger(self.__class__.__name__).debug(message)
 
     def log_warning(self, message: str):
         """记录警告日志"""
@@ -444,6 +511,9 @@ async def main():
     """
     主函数
     """
+    # 抑制Pyrogram的常见清理错误
+    suppress_pyrogram_errors()
+
     # 解析命令行参数
     args = parse_arguments()
 
@@ -470,6 +540,9 @@ async def main():
     finally:
         # 停止带宽监控
         bandwidth_monitor.stop()
+
+        # 最终清理剩余任务
+        await AsyncTaskCleaner.graceful_shutdown(timeout=2.0)
 
 if __name__ == "__main__":
     # 显示启动信息

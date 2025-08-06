@@ -130,32 +130,43 @@ class ClientManager(LoggerMixin):
         """停止所有客户端"""
         if not self.clients:
             return
-        
+
         self.log_info(f"停止 {len(self.clients)} 个客户端...")
-        
-        stop_tasks = []
+
+        # 改进的客户端停止逻辑，避免数据库操作错误
         for client in self.clients:
             if client.is_connected:
-                task = client.stop()
-                stop_tasks.append(task)
-        
-        if stop_tasks:
-            # 使用 return_exceptions=True 来捕获并忽略清理时的异常
-            results = await asyncio.gather(*stop_tasks, return_exceptions=True)
+                try:
+                    # 给客户端一些时间完成当前操作
+                    await asyncio.sleep(0.1)
 
-            # 检查结果并记录有意义的错误
-            for i, result in enumerate(results):
-                if isinstance(result, Exception):
-                    error_msg = str(result).lower()
+                    # 停止客户端
+                    await asyncio.wait_for(client.stop(), timeout=5.0)
+
+                except asyncio.TimeoutError:
+                    self.log_warning(f"客户端 {client.name} 停止超时，强制关闭")
+                    # 强制关闭连接
+                    try:
+                        if hasattr(client, 'session') and client.session:
+                            await client.session.stop()
+                    except:
+                        pass
+
+                except Exception as e:
+                    error_msg = str(e).lower()
                     # 忽略常见的数据库清理错误，这些是正常的
                     if any(keyword in error_msg for keyword in [
                         'database', 'sqlite', 'connection', 'closed',
-                        'cannot operate on a closed database'
+                        'cannot operate on a closed database',
+                        'session is closed', 'connection lost'
                     ]):
-                        # 这些错误是预期的，不需要记录
-                        pass
+                        # 这些错误是预期的，不需要记录为错误
+                        self.log_debug(f"客户端 {client.name} 正常清理: {e}")
                     else:
-                        self.log_error(f"客户端 {self.clients[i].name} 停止时出现意外错误: {result}")
+                        self.log_error(f"客户端 {client.name} 停止时出现意外错误: {e}")
+
+        # 等待一小段时间让所有后台任务完成
+        await asyncio.sleep(0.5)
 
         self.log_info("所有客户端已停止")
     
