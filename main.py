@@ -267,10 +267,15 @@ class MultiClientDownloader:
                     continue
 
                 # 2. 模板处理
+                # 传递source_channel信息
+                extra_variables = {
+                    "source_channel": self.workflow_config.source_channel
+                }
                 processed_result = self.template_processor.process(
                     self.workflow_config.template_config,
                     download_result,
-                    auto_extract=True
+                    auto_extract=True,
+                    extra_variables=extra_variables
                 )
 
                 if not processed_result.get("success", True):
