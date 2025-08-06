@@ -90,14 +90,17 @@ class TemplateEngine(LoggerMixin):
         
         # 替换模板中的变量
         content = template_config.content
-        
+
+        # 处理转义字符（将 \n 转换为真正的换行符）
+        content = self._process_escape_sequences(content)
+
         # 使用正则表达式替换变量
         def replace_variable(match):
             var_name = match.group(1).strip()
             return variables.get(var_name, f"{{{var_name}}}")  # 未找到变量时保持原样
-        
+
         rendered_content = self.VARIABLE_PATTERN.sub(replace_variable, content)
-        
+
         self.log_info(f"模板渲染完成，替换了 {len(self.extract_variables(content))} 个变量")
         return rendered_content
     
@@ -145,7 +148,31 @@ class TemplateEngine(LoggerMixin):
             variables.update(extra_variables)
         
         return variables
-    
+
+    def _process_escape_sequences(self, content: str) -> str:
+        """
+        处理模板中的转义字符
+
+        Args:
+            content: 原始模板内容
+
+        Returns:
+            str: 处理转义字符后的内容
+        """
+        # 处理常见的转义字符
+        escape_sequences = {
+            '\\n': '\n',    # 换行符
+            '\\t': '\t',    # 制表符
+            '\\r': '\r',    # 回车符
+            '\\\\': '\\',   # 反斜杠
+        }
+
+        processed_content = content
+        for escape_seq, actual_char in escape_sequences.items():
+            processed_content = processed_content.replace(escape_seq, actual_char)
+
+        return processed_content
+
     def extract_variables(self, template_content: str) -> Set[str]:
         """
         从模板内容中提取变量名

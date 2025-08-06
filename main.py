@@ -513,8 +513,8 @@ def parse_arguments():
 def validate_arguments(args):
     """验证命令行参数"""
     # 验证消息ID范围
-    if args.start >= args.end:
-        raise ValueError(f"起始消息ID ({args.start}) 必须小于结束消息ID ({args.end})")
+    if args.start > args.end:
+        raise ValueError(f"起始消息ID ({args.start}) 不能大于结束消息ID ({args.end})")
 
     if args.start < 1 or args.end < 1:
         raise ValueError("消息ID必须大于0")
