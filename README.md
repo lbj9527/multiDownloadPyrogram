@@ -131,6 +131,8 @@ python main.py --mode download --source "@luanlunluoli" --start 8255 --end 8412
 
 ### 转发上传功能（新增）
 
+#### 基础转发命令
+
 ```bash
 # 转发到单个频道 (Linux/macOS)
 python main.py --mode forward --source "@source_channel" --targets "@target_channel" --start 1000 --end 1100
@@ -143,11 +145,31 @@ python main.py --mode forward --source "@source_channel" --targets "@target1" "@
 
 # 转发到多个频道 (Windows PowerShell)
 python main.py --mode forward --source "@source_channel" --targets "@target1" "@target2" "@target3" --start 1000 --end 1100
+```
 
-# 使用自定义模板转发 (Windows PowerShell)
+#### 媒体组完整性保持（推荐）
+
+```bash
+# 保持原始消息结构：单条消息→单条消息，媒体组→媒体组
+python main.py --mode forward --source "@source" --targets "@target" --preserve-structure
+
+# 保持结构 + 自定义模板
+python main.py --mode forward --source "@source" --targets "@target" --preserve-structure --template "🔥 精彩内容分享\n\n{original_text}{original_caption}\n\n📂 {file_name}"
+
+# 保持结构 + 自定义媒体组超时时间（默认300秒）
+python main.py --mode forward --source "@source" --targets "@target" --preserve-structure --group-timeout 600
+
+# 实际示例：保持媒体组完整性转发
+python main.py --mode forward --source "@csdkl" --targets "@target1" "@target2" --start 73472 --end 73551 --preserve-structure
+```
+
+#### 传统批量模式（兼容性）
+
+```bash
+# 使用自定义模板转发（传统10个文件一组模式）
 python main.py --mode forward --source "@source" --targets "@target" --template "📸 转发: {file_name}\n\n{original_text}"
 
-# 自定义批次大小（默认10个文件一组）
+# 自定义批次大小（传统模式，默认10个文件一组）
 python main.py --mode forward --source "@source" --targets "@target" --batch-size 5
 
 # 成功后不清理临时文件（用于调试）
@@ -156,6 +178,19 @@ python main.py --mode forward --source "@source" --targets "@target" --no-cleanu
 # 失败后也清理临时文件
 python main.py --mode forward --source "@source" --targets "@target" --cleanup-failure
 ```
+
+### 转发模式对比
+
+| 特性         | 媒体组完整性保持模式                         | 传统批量模式         |
+| ------------ | -------------------------------------------- | -------------------- |
+| **启用方式** | `--preserve-structure`                       | 默认模式（不加参数） |
+| **单条消息** | 单条消息 → 单条消息                          | 10 个文件一组        |
+| **媒体组**   | 媒体组 → 媒体组（保持完整）                  | 10 个文件一组        |
+| **API 使用** | `send_photo/send_video` + `send_media_group` | `send_media_group`   |
+| **结构保持** | ✅ 完全保持原始结构                          | ❌ 重新分组          |
+| **推荐场景** | 🌟 **推荐**：保持原频道结构                  | 兼容性：简单批量转发 |
+
+**推荐使用媒体组完整性保持模式**，它能完美保持原频道的消息结构，确保单条消息和媒体组在目标频道中的呈现与源频道完全一致。
 
 ### 命令行参数
 
@@ -171,8 +206,12 @@ python main.py --help
 --targets TARGET [TARGET ...] # 目标频道列表（转发模式必需，PowerShell中需要引号）
 --template TEMPLATE          # 自定义模板（转发模式可选）
 
-# 分阶段上传参数（默认行为）
---batch-size SIZE            # 媒体组批次大小 (默认: 10)
+# 媒体组完整性保持参数（推荐）
+--preserve-structure         # 保持原始消息结构（单条消息→单条消息，媒体组→媒体组）
+--group-timeout SECONDS     # 媒体组收集超时时间，秒 (默认: 300)
+
+# 分阶段上传参数（传统模式）
+--batch-size SIZE            # 媒体组批次大小 (默认: 10，仅传统模式)
 --no-cleanup-success         # 成功后不清理临时文件
 --cleanup-failure            # 失败后也清理临时文件
 

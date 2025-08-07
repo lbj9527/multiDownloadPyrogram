@@ -273,8 +273,22 @@
     - `get_stats()` - 统计信息
     - `_distribute_to_single_channel()`, `_distribute_single_to_channel()` - 私有方法
 
+- [core/upload/staged/preservation_config.py](#-coreuploadstagedpreservation_configpy) - 媒体组完整性保持配置 🆕
+
+  - `MediaGroupPreservationConfig` 类 - 媒体组保持配置
+    - `validate()` - 配置验证
+  - `create_preservation_config()`, `create_enabled_config()`, `create_disabled_config()` - 便捷创建函数
+
+- [core/upload/staged/upload_unit.py](#-coreuploadstagedupload_unitpy) - 上传单元模块 🆕
+
+  - `UploadUnitType` 枚举 - 上传单元类型
+  - `UploadUnit` 类 - 上传单元（替代 MediaGroupBatch）
+    - `get_total_size()`, `get_item_count()`, `is_valid_for_telegram()` - 基础方法
+    - `is_single_message()`, `is_media_group()`, `get_description()` - 类型判断
+  - `create_single_message_unit()`, `create_original_group_unit()`, `create_batch_group_unit()` - 创建函数
+
 - [core/upload/staged/staged_upload_manager.py](#-coreuploadstagedstaged_upload_managerpy) - 分阶段上传管理器
-  - `StagedUploadConfig` 类 - 分阶段上传配置
+  - `StagedUploadConfig` 类 - 分阶段上传配置（已扩展支持媒体组保持）
   - `StagedUploadResult` 类 - 分阶段上传结果
     - `get_success_rate()`, `get_duration()`, `is_successful()` - 结果分析
   - `StagedUploadManager` 类 - 主管理器

@@ -5,6 +5,71 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.6.0] - 2025-08-07 (媒体组完整性保持功能 🎯)
+
+### 🌟 重大新功能 - 媒体组完整性保持
+
+- ✅ **新增 `--preserve-structure` 参数**
+
+  - 保持原始消息结构：单条消息 → 单条消息，媒体组 → 媒体组
+  - 完美保持原频道的消息呈现方式
+  - 使用正确的 Telegram API：单条消息用 `send_photo/send_video`，媒体组用 `send_media_group`
+
+- ✅ **消息结构信息提取**
+
+  - 新增 `MessageStructureInfo` 类保存媒体组信息
+  - 实现 `MessageStructureExtractor` 在消息获取阶段提取结构信息
+  - 修改 `MessageFetcher` 自动为消息添加 `_structure_info` 属性
+
+- ✅ **结构感知的消息分组和任务分配**
+
+  - 扩展 `MessageGrouper` 支持结构保持模式
+  - 扩展 `MediaGroupAwareDistributionStrategy` 优先保持媒体组完整性
+  - 实现原始媒体组的智能收集和分配
+
+- ✅ **配置系统扩展**
+
+  - 新增 `MediaGroupPreservationConfig` 配置类
+  - 扩展 `StagedUploadConfig` 支持媒体组保持配置
+  - 添加 `--group-timeout` 参数配置媒体组收集超时时间
+
+- ✅ **数据模型增强**
+
+  - 扩展 `MediaData` 类包含结构信息字段
+  - 修改 `TelegramDataSource` 使用预提取的结构信息
+  - 扩展 `WorkflowConfig` 支持新的配置参数
+
+### 📚 文档更新
+
+- ✅ **README.md 全面更新**
+
+  - 添加媒体组完整性保持功能说明
+  - 新增转发模式对比表格
+  - 更新命令行参数文档
+  - 提供详细的使用示例
+
+- ✅ **FUNCTION_INDEX.md 更新**
+
+  - 添加新模块和函数的索引
+  - 更新现有函数的描述
+
+### 🎯 使用方法
+
+```bash
+# 推荐：保持媒体组完整性
+python main.py --mode forward --source "@source" --targets "@target" --preserve-structure
+
+# 传统模式（向后兼容）
+python main.py --mode forward --source "@source" --targets "@target"
+```
+
+### 🔧 技术特性
+
+- **向后兼容**: 默认行为不变，通过参数启用新功能
+- **模块化设计**: 新功能不影响现有代码
+- **可配置**: 超时时间、启用/禁用等可配置
+- **Telegram API 兼容**: 严格遵守 10 个文件的媒体组限制
+
 ## [1.5.2] - 2025-08-07 (修复 InputMedia file_id 问题 🐛)
 
 ### 重要修复 - InputMedia 对象创建
