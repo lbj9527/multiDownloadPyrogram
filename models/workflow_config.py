@@ -43,6 +43,11 @@ class WorkflowConfig:
     target_channels: List[str] = field(default_factory=list)
     template_config: Optional[TemplateConfig] = None
 
+    # 分阶段上传配置（现在是默认行为）
+    staged_batch_size: int = 10           # 媒体组大小
+    cleanup_after_success: bool = True    # 成功后清理临时文件
+    cleanup_after_failure: bool = False   # 失败后清理临时文件
+
     # 执行配置
     # 注意：并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
     batch_size: int = 10               # 批处理大小

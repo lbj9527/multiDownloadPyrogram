@@ -26,11 +26,12 @@
   - `MultiClientDownloader` 类
     - `__init__()`, `run_download()`, `_start_monitoring()`, `_initialize_clients()`
     - `_fetch_messages()`, `_distribute_tasks()`, `_execute_downloads()`
-    - `_execute_forward_workflow()` - ✅ **新增并发转发工作流**
-    - `_forward_client_messages()` - ✅ **新增单客户端转发任务**
-    - `_summarize_forward_results()` - ✅ **新增转发结果汇总**
+    - `_execute_forward_workflow()` - ✅ **统一使用分阶段转发**
+    - `_execute_staged_forward_workflow()` - ✅ **分阶段转发工作流（默认）**
+    - `_staged_forward_client_messages()` - ✅ **分阶段单客户端转发任务**
+    - `_summarize_staged_forward_results()` - ✅ **分阶段转发结果汇总**
     - `_print_final_results()`, `_cleanup()`, `log_info()`, `log_error()`
-  - `create_workflow_config_from_args()` - ✅ **修复：添加 original_caption 变量**
+  - `create_workflow_config_from_args()` - ✅ **分阶段上传配置**
   - `_initialize_account_info()` - ✅ **新增：初始化账户信息**
   - `main()` 函数
 
@@ -227,6 +228,62 @@
     - `upload_to_multiple_channels()` - 多频道上传
     - `get_active_uploads()`, `get_upload_progress()`
     - `create_upload_summary()` - 上传摘要
+
+### 🆕 分阶段上传模块 (v1.5.0)
+
+- [core/upload/staged/data_source.py](#-coreuploadstageddata_sourcepy) - 数据源抽象层
+
+  - `MediaType` 枚举 - 媒体类型定义
+  - `MediaData` 类 - 媒体数据模型
+    - `get_display_name()` - 获取显示名称
+  - `DataSource` 抽象类 - 数据源接口
+    - `get_media_data()`, `validate_source_item()` - 抽象方法
+  - `TelegramDataSource` 类 - Telegram 数据源实现
+    - `get_media_data()`, `validate_source_item()`
+    - `_determine_media_type()`, `_get_media_dimensions()` - 私有方法
+
+- [core/upload/staged/temporary_storage.py](#-coreuploadstagedtemporary_storagepy) - 临时存储抽象层
+
+  - `TemporaryMediaItem` 类 - 临时媒体项
+    - `get_age_seconds()` - 获取存储时长
+  - `TemporaryStorage` 抽象类 - 临时存储接口
+    - `store_media()`, `cleanup_media()`, `cleanup_batch()` - 抽象方法
+  - `TelegramMeStorage` 类 - me 聊天临时存储实现
+    - `store_media()`, `cleanup_media()`, `cleanup_batch()`
+    - `_upload_by_type()` - 根据媒体类型上传
+
+- [core/upload/staged/media_group_manager.py](#-coreuploadstagedmedia_group_managerpy) - 媒体组管理器
+
+  - `MediaGroupType` 枚举 - 媒体组类型
+  - `MediaGroupBatch` 类 - 媒体组批次
+    - `is_full()`, `can_add_item()`, `get_total_size()` - 批次管理
+  - `MediaGroupManager` 类 - 媒体组管理器
+    - `add_media_item()`, `get_ready_batches()`, `flush_all_batches()`
+    - `create_input_media_group()`, `get_stats()` - 核心功能
+    - `_add_to_photo_video_batch()`, `_add_to_document_batch()`, `_add_to_audio_batch()` - 私有方法
+    - `_create_input_media()` - InputMedia 对象创建
+
+- [core/upload/staged/target_distributor.py](#-coreuploadstagedtarget_distributorpy) - 目标分发器
+
+  - `ChannelDistributionResult` 类 - 单频道分发结果
+  - `DistributionResult` 类 - 分发结果
+    - `is_successful()`, `get_success_rate()`, `get_duration()` - 结果分析
+  - `TargetDistributor` 类 - 目标分发器
+    - `distribute_media_group()`, `distribute_single_media()` - 分发方法
+    - `get_stats()` - 统计信息
+    - `_distribute_to_single_channel()`, `_distribute_single_to_channel()` - 私有方法
+
+- [core/upload/staged/staged_upload_manager.py](#-coreuploadstagedstaged_upload_managerpy) - 分阶段上传管理器
+  - `StagedUploadConfig` 类 - 分阶段上传配置
+  - `StagedUploadResult` 类 - 分阶段上传结果
+    - `get_success_rate()`, `get_duration()`, `is_successful()` - 结果分析
+  - `StagedUploadManager` 类 - 主管理器
+    - `upload_with_staging()` - 主要上传方法
+    - `get_stats()` - 统计信息
+    - `_stage_1_data_acquisition_and_staging()` - 阶段 1：数据获取和临时存储
+    - `_stage_2_grouping_and_distribution()` - 阶段 2：媒体组管理和分发
+    - `_stage_3_cleanup()` - 阶段 3：清理
+    - `_emergency_cleanup()` - 紧急清理
 
 ## 🎨 模板模块 (Phase 2)
 

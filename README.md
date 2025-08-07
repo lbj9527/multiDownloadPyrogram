@@ -38,6 +38,11 @@
   - 智能上传策略，根据文件类型选择最佳上传方式
   - 批量并发上传，支持多频道分发
   - 完整的进度跟踪和错误处理
+  - **分阶段上传**: 先上传到 me 聊天，再批量分发到目标频道（默认行为）
+    - 使用 send_media_group 进行媒体组批量上传
+    - 支持 10 个文件为一组的智能分组
+    - 自动临时文件清理机制
+    - 模块化设计，支持扩展其他数据源
 - ✅ **工作流管理**: 本地下载和转发上传两种工作模式
   - 完整的工作流配置系统
   - 文件过滤和调度功能
@@ -141,6 +146,15 @@ python main.py --mode forward --source "@source_channel" --targets "@target1" "@
 
 # 使用自定义模板转发 (Windows PowerShell)
 python main.py --mode forward --source "@source" --targets "@target" --template "📸 转发: {file_name}\n\n{original_text}"
+
+# 自定义批次大小（默认10个文件一组）
+python main.py --mode forward --source "@source" --targets "@target" --batch-size 5
+
+# 成功后不清理临时文件（用于调试）
+python main.py --mode forward --source "@source" --targets "@target" --no-cleanup-success
+
+# 失败后也清理临时文件
+python main.py --mode forward --source "@source" --targets "@target" --cleanup-failure
 ```
 
 ### 命令行参数
@@ -156,6 +170,11 @@ python main.py --help
 --end END                    # 结束消息ID (默认: 72849)
 --targets TARGET [TARGET ...] # 目标频道列表（转发模式必需，PowerShell中需要引号）
 --template TEMPLATE          # 自定义模板（转发模式可选）
+
+# 分阶段上传参数（默认行为）
+--batch-size SIZE            # 媒体组批次大小 (默认: 10)
+--no-cleanup-success         # 成功后不清理临时文件
+--cleanup-failure            # 失败后也清理临时文件
 
 # 配置说明：
 # 下载目录：在 config/settings.py 的 DownloadConfig.download_dir 中配置

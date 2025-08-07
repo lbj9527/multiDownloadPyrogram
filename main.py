@@ -22,12 +22,12 @@ from core.download import DownloadManager
 
 # 模板和上传模块 (Phase 2 & 3)
 from core.template import TemplateProcessor
-from core.upload import UploadManager, BatchUploader
+from core.upload import (StagedUploadManager, StagedUploadConfig,
+                        TelegramDataSource, TelegramMeStorage)
 
 # 数据模型
 from models.workflow_config import WorkflowConfig, WorkflowType
 from models.template_config import TemplateConfig, TemplateMode
-from models.upload_task import UploadTask
 
 # 监控模块
 from monitoring import StatsCollector
@@ -49,10 +49,8 @@ class MultiClientDownloader:
         self.message_grouper = MessageGrouper()
         self.task_distributor = TaskDistributor()
 
-        # 模板和上传管理器 (Phase 2 & 3)
+        # 模板处理器 (Phase 2)
         self.template_processor = TemplateProcessor()
-        self.upload_manager = UploadManager()
-        self.batch_uploader = BatchUploader(max_concurrent=3)
 
         # 监控组件
         self.stats_collector = StatsCollector()
@@ -226,127 +224,120 @@ class MultiClientDownloader:
         if not self.workflow_config.template_config:
             raise ValueError("转发工作流需要配置模板")
 
-        # 1. 分组和分配任务（复用下载模式的分配逻辑）
+        # 始终使用分阶段上传模式
+        await self._execute_staged_forward_workflow(messages)
+
+
+
+    async def _execute_staged_forward_workflow(self, messages: List):
+        """执行分阶段转发上传工作流"""
+        self.log_info("📤 使用分阶段上传模式（先上传到me，再批量分发）...")
+
+        # 1. 分组和分配任务
         distribution_result = await self._distribute_tasks(messages)
 
-        # 2. 创建并发转发任务
-        forward_tasks = []
+        # 2. 创建并发分阶段转发任务
+        staged_tasks = []
         for assignment in distribution_result.client_assignments:
             client = self.client_manager.get_client_by_name(assignment.client_name)
             if client:
-                task = self._forward_client_messages(client, assignment)
-                forward_tasks.append(task)
+                task = self._staged_forward_client_messages(client, assignment)
+                staged_tasks.append(task)
 
-        # 3. 并发执行转发
-        self.log_info(f"🚀 启动 {len(forward_tasks)} 个客户端并发转发...")
-        results = await asyncio.gather(*forward_tasks, return_exceptions=True)
+        # 3. 并发执行分阶段转发
+        self.log_info(f"🚀 启动 {len(staged_tasks)} 个客户端并发分阶段转发...")
+        results = await asyncio.gather(*staged_tasks, return_exceptions=True)
 
         # 4. 汇总结果
-        self._summarize_forward_results(results, len(messages))
+        self._summarize_staged_forward_results(results, len(messages))
 
-    async def _forward_client_messages(self, client, assignment):
-        """单个客户端的转发任务"""
+    async def _staged_forward_client_messages(self, client, assignment):
+        """单个客户端的分阶段转发任务"""
         client_name = assignment.client_name
         messages = assignment.get_all_messages()
 
-        self.log_info(f"🔄 {client_name} 开始转发 {len(messages)} 个文件...")
+        self.log_info(f"🔄 {client_name} 开始分阶段转发 {len(messages)} 个文件...")
 
-        successful_forwards = 0
-        failed_forwards = 0
+        try:
+            # 创建分阶段上传组件
+            data_source = TelegramDataSource(client)
+            temp_storage = TelegramMeStorage(client)
 
-        for message in messages:
-            try:
-                # 1. 内存下载
-                download_result = await self.download_manager.download_media_enhanced(
-                    client, message, mode="memory"
-                )
+            staged_config = StagedUploadConfig(
+                batch_size=self.workflow_config.staged_batch_size,
+                cleanup_after_success=self.workflow_config.cleanup_after_success,
+                cleanup_after_failure=self.workflow_config.cleanup_after_failure
+            )
 
-                if not download_result:
-                    self.log_warning(f"{client_name} 消息 {message.id} 下载失败，跳过")
-                    failed_forwards += 1
-                    continue
+            staged_manager = StagedUploadManager(
+                data_source=data_source,
+                temporary_storage=temp_storage,
+                config=staged_config
+            )
 
-                # 2. 模板处理
-                # 传递source_channel信息
-                extra_variables = {
-                    "source_channel": self.workflow_config.source_channel
-                }
-                processed_result = self.template_processor.process(
-                    self.workflow_config.template_config,
-                    download_result,
-                    auto_extract=True,
-                    extra_variables=extra_variables
-                )
+            # 进度回调函数
+            def progress_callback(message: str):
+                self.log_info(f"{client_name}: {message}")
 
-                if not processed_result.get("success", True):
-                    self.log_warning(f"{client_name} 消息 {message.id} 模板处理失败: {processed_result.get('error', 'Unknown error')}")
+            # 执行分阶段上传
+            result = await staged_manager.upload_with_staging(
+                source_items=messages,
+                target_channels=self.workflow_config.target_channels,
+                client=client,
+                progress_callback=progress_callback
+            )
 
-                # 3. 创建上传任务
-                upload_tasks = []
-                for target_channel in self.workflow_config.target_channels:
-                    upload_task = UploadTask(
-                        source_message_id=message.id,
-                        target_channel=target_channel,
-                        file_name=download_result.file_name,
-                        file_size=download_result.file_size,
-                        file_data=download_result.file_data,
-                        formatted_content=processed_result.get('content', ''),
-                        caption=processed_result.get('content', '')
-                    )
-                    upload_tasks.append(upload_task)
+            self.log_info(f"✅ {client_name} 分阶段转发完成: 成功率 {result.get_success_rate():.1%}")
 
-                # 4. 批量上传
-                if upload_tasks:
-                    batch_result = await self.batch_uploader.upload_batch(client, upload_tasks, client_name=client_name)
-                    if batch_result.is_completed():
-                        successful_forwards += 1
-                        self.log_info(f"{client_name} 消息 {message.id} 转发成功: {batch_result.get_success_rate():.1%}")
-                    else:
-                        failed_forwards += 1
-                        self.log_error(f"{client_name} 消息 {message.id} 转发失败")
-                else:
-                    failed_forwards += 1
-                    self.log_error(f"{client_name} 消息 {message.id} 没有创建上传任务")
+            return {
+                "client_name": client_name,
+                "staged_result": result,
+                "total_messages": len(messages)
+            }
 
-            except Exception as e:
-                failed_forwards += 1
-                self.log_error(f"{client_name} 处理消息 {message.id} 时出错: {e}")
+        except Exception as e:
+            self.log_error(f"{client_name} 分阶段转发失败: {e}")
+            return {
+                "client_name": client_name,
+                "error": str(e),
+                "total_messages": len(messages)
+            }
 
-        self.log_info(f"✅ {client_name} 转发任务完成: 成功 {successful_forwards}, 失败 {failed_forwards}")
-
-        # 返回结果统计
-        return {
-            "client_name": client_name,
-            "successful_forwards": successful_forwards,
-            "failed_forwards": failed_forwards,
-            "total_messages": len(messages)
-        }
-
-    def _summarize_forward_results(self, results: List, total_messages: int):
-        """汇总转发结果"""
-        total_successful = 0
+    def _summarize_staged_forward_results(self, results: List, total_messages: int):
+        """汇总分阶段转发结果"""
         total_failed = 0
+        total_distributed = 0
 
         for result in results:
             if isinstance(result, Exception):
-                self.log_error(f"客户端转发任务异常: {result}")
+                self.log_error(f"客户端分阶段转发任务异常: {result}")
                 continue
 
             if isinstance(result, dict):
-                total_successful += result.get("successful_forwards", 0)
-                total_failed += result.get("failed_forwards", 0)
-
-                # 更新统计信息
                 client_name = result.get("client_name", "unknown")
-                for i in range(result.get("successful_forwards", 0)):
-                    self.stats_collector.update_download_progress(True, None, client_name, 0)
-                for i in range(result.get("failed_forwards", 0)):
-                    self.stats_collector.update_download_progress(False, None, client_name, 0)
 
-        self.log_info(f"🎉 并发转发工作流完成: 成功 {total_successful}, 失败 {total_failed}")
+                if "staged_result" in result:
+                    staged_result = result["staged_result"]
+                    total_distributed += staged_result.distributed_items
+                    total_failed += staged_result.failed_items
+
+                    # 更新统计信息
+                    for i in range(staged_result.distributed_items):
+                        self.stats_collector.update_download_progress(True, None, client_name, 0)
+                    for i in range(staged_result.failed_items):
+                        self.stats_collector.update_download_progress(False, None, client_name, 0)
+
+                elif "error" in result:
+                    total_failed += result.get("total_messages", 0)
+                    for i in range(result.get("total_messages", 0)):
+                        self.stats_collector.update_download_progress(False, None, client_name, 0)
+
+        self.log_info(f"🎉 分阶段转发工作流完成: 成功分发 {total_distributed}, 失败 {total_failed}")
 
         # 设置统计总数
         self.stats_collector.set_total_messages(total_messages)
+
+
     
     async def _download_client_messages(self, client, assignment, channel: str):
         """单个客户端的下载任务"""
@@ -463,7 +454,11 @@ def create_workflow_config_from_args(args) -> Optional[WorkflowConfig]:
             source_channel=args.source,
             message_range=(args.start, args.end),
             target_channels=args.targets,
-            template_config=template_config
+            template_config=template_config,
+            # 分阶段上传配置（现在是默认行为）
+            staged_batch_size=args.batch_size,
+            cleanup_after_success=not args.no_cleanup_success,
+            cleanup_after_failure=args.cleanup_failure
         )
     else:
         return None
@@ -477,6 +472,12 @@ def parse_arguments():
 使用示例:
   本地下载: python main.py --mode download --source "@channel" --start 1000 --end 2000
   转发上传: python main.py --mode forward --source "@source" --targets "@target1" "@target2"
+
+转发上传说明:
+  转发模式使用分阶段上传：先上传到me聊天，再批量分发到目标频道
+  --batch-size: 每个媒体组的大小，默认10个文件为一组
+  --no-cleanup-success: 成功后不清理me聊天中的临时文件
+  --cleanup-failure: 失败后也清理me聊天中的临时文件
 
 注意: 在 PowerShell 中，频道名称需要用引号包围，如 "@channel"
         """
@@ -502,6 +503,14 @@ def parse_arguments():
                        help="目标频道列表 (转发模式必需)，在 PowerShell 中请用引号包围")
     parser.add_argument("--template", type=str,
                        help="自定义模板内容")
+
+    # 分阶段上传参数（现在是默认行为）
+    parser.add_argument("--batch-size", type=int, default=10,
+                       help="媒体组批次大小 (默认: 10)")
+    parser.add_argument("--no-cleanup-success", action="store_true",
+                       help="成功后不清理临时文件")
+    parser.add_argument("--cleanup-failure", action="store_true",
+                       help="失败后也清理临时文件")
 
     args = parser.parse_args()
 

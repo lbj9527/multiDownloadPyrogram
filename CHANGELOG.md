@@ -5,6 +5,128 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.5.2] - 2025-08-07 (修复 InputMedia file_id 问题 🐛)
+
+### 重要修复 - InputMedia 对象创建
+
+- ✅ **修复 file_id 获取问题**
+
+  - 修复 InputMedia 对象创建时使用 message_id 导致的错误
+  - 正确从上传到 me 的消息中提取 file_id
+  - 使用 file_id 而不是 message_id 创建 InputMedia 对象
+
+- ✅ **增强 TemporaryMediaItem**
+
+  - 新增 file_id 字段存储 Telegram 文件 ID
+  - 添加\_extract_file_id 方法支持所有媒体类型
+  - 完善错误处理和日志记录
+
+- ✅ **修复媒体组上传**
+
+  - 解决"Invalid file. Expected a file path as string or a binary file pointer"错误
+  - 确保 send_media_group API 正确接收 file_id 参数
+  - 提高上传成功率和稳定性
+
+### 技术细节
+
+- **问题原因**: Pyrogram 的 send_media_group API 期望 file_id 或文件路径，而不是消息 ID
+- **解决方案**: 从上传到 me 的消息中提取对应媒体的 file_id
+- **支持类型**: 照片、视频、文档、音频、语音、视频笔记、动画等所有媒体类型
+
+## [1.5.1] - 2025-08-07 (分阶段上传成为默认 🔄)
+
+### 重大变更 - 分阶段上传成为默认行为
+
+- ✅ **移除传统上传模式**
+
+  - 删除 `--staged-upload` 参数，分阶段上传现在是唯一的上传方式
+  - 移除传统的 `_forward_client_messages()` 和 `_summarize_forward_results()` 方法
+  - 删除 `UploadManager` 和 `BatchUploader` 的依赖
+  - 简化工作流配置，移除 `use_staged_upload` 字段
+
+- ✅ **简化用户体验**
+
+  - 用户无需指定特殊参数即可享受分阶段上传的优势
+  - 保留批次大小和清理策略的配置选项
+  - 更新帮助文档和使用示例
+
+- ✅ **代码简化**
+
+  - 移除重复的上传逻辑代码
+  - 统一使用分阶段上传架构
+  - 减少代码维护复杂度
+
+### 向后兼容性
+
+- ✅ 现有的命令行参数保持兼容（除了移除 `--staged-upload`）
+- ✅ 配置文件格式保持兼容
+- ✅ 所有功能特性保持不变，只是实现方式统一
+
+## [1.5.0] - 2025-08-07 (分阶段上传 🆕)
+
+### 新增 - 分阶段上传功能
+
+- ✅ **分阶段上传架构** (`core/upload/staged/`)
+
+  - 新增 `DataSource` 抽象层，支持多种数据源扩展
+  - 新增 `TelegramDataSource` 实现，从 Telegram 消息获取媒体数据
+  - 新增 `TemporaryStorage` 抽象层，支持多种临时存储方式
+  - 新增 `TelegramMeStorage` 实现，使用 me 聊天作为临时存储
+  - 新增 `MediaGroupManager` 媒体组管理器，智能分组和 InputMedia 创建
+  - 新增 `TargetDistributor` 目标分发器，并发分发到多个频道
+  - 新增 `StagedUploadManager` 主管理器，协调整个分阶段上传流程
+
+- ✅ **媒体组批量上传**
+
+  - 使用 Pyrogram 的 `send_media_group` API 进行批量上传
+  - 支持照片/视频混合组、文档组、音频组的智能分类
+  - 默认 10 个文件为一组，可通过 `--batch-size` 参数自定义
+  - 自动创建 InputMediaPhoto、InputMediaVideo、InputMediaDocument 等对象
+  - 保持原消息的 caption 和媒体属性
+
+- ✅ **智能临时文件管理**
+
+  - 先上传到 me 聊天作为临时存储，避免重复下载
+  - 成功分发后自动清理临时文件（可配置）
+  - 支持批量删除，提高清理效率
+  - 失败处理：可选择是否清理失败的临时文件
+
+- ✅ **命令行参数扩展**
+
+  - `--staged-upload`: 启用分阶段上传模式
+  - `--batch-size SIZE`: 设置媒体组批次大小（默认 10）
+  - `--no-cleanup-success`: 成功后不清理临时文件
+  - `--cleanup-failure`: 失败后也清理临时文件
+
+- ✅ **工作流集成**
+
+  - 扩展 `WorkflowConfig` 支持分阶段上传配置
+  - 在 `main.py` 中集成新的分阶段转发工作流
+  - 保持向后兼容，传统上传方式仍然可用
+  - 新增分阶段转发结果统计和汇总
+
+### 优化 - 模块化设计
+
+- ✅ **接口化架构**
+
+  - 所有组件都基于抽象接口设计，便于扩展
+  - 数据源可扩展：未来可支持文件系统、URL 等数据源
+  - 临时存储可扩展：未来可支持本地文件、云存储等
+  - 分发器可扩展：未来可支持其他平台的分发
+
+- ✅ **错误处理和重试**
+
+  - 完善的异常处理机制，每个阶段独立处理错误
+  - 支持 FloodWait 自动等待和重试
+  - 详细的错误日志和统计信息
+  - 紧急清理机制，确保资源不泄露
+
+### 文档更新
+
+- ✅ 更新 README.md 添加分阶段上传使用说明
+- ✅ 新增 `test_staged_upload.py` 测试脚本
+- ✅ 更新命令行帮助文档和使用示例
+
 ## [1.4.0] - 2025-08-06 (性能优化 ✅)
 
 ### 新增 - 并发转发工作流优化
