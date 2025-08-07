@@ -994,12 +994,12 @@
 
 #### `async parallel_fetch_messages(self, channel: str, start_id: int, end_id: int) -> List[Any]`
 
-- **功能**: 并发获取消息 - 多客户端分工获取不同范围的消息
+- **功能**: 并发获取消息 - 多客户端分工获取不同范围的消息，同时为消息添加结构信息
 - **参数**:
   - `channel`: 频道名称
   - `start_id`: 起始消息 ID
   - `end_id`: 结束消息 ID
-- **返回值**: 消息列表
+- **返回值**: 增强的消息列表（包含\_structure_info 属性）
 
 #### `async fetch_message_range(self, client: Client, channel: str, message_ids: List[int], client_index: int) -> List[Any]`
 
@@ -1013,14 +1013,47 @@
 
 ---
 
+## 📁 core/message/structure_info.py
+
+### 类: MessageStructureInfo
+
+#### `@property is_group_member(self) -> bool`
+
+- **功能**: 是否属于媒体组
+- **返回值**: 布尔值
+
+#### `@property is_media_message(self) -> bool`
+
+- **功能**: 是否为媒体消息
+- **返回值**: 布尔值
+
+### 类: MessageStructureExtractor
+
+#### `@staticmethod extract_structure_info(message) -> MessageStructureInfo`
+
+- **功能**: 从消息中提取结构信息
+- **参数**:
+  - `message`: Telegram 消息对象
+- **返回值**: 消息结构信息
+
+#### `@staticmethod enhance_messages_batch(messages: list) -> list`
+
+- **功能**: 批量为消息添加结构信息
+- **参数**:
+  - `messages`: 消息列表
+- **返回值**: 增强的消息列表
+
+---
+
 ## 📁 core/message/grouper.py
 
 ### 类: MessageGrouper
 
-#### `__init__(self)`
+#### `__init__(self, preserve_structure: bool = False)`
 
 - **功能**: 初始化消息分组器
-- **参数**: 无
+- **参数**:
+  - `preserve_structure`: 是否保持原始消息结构
 - **返回值**: None
 
 #### `group_messages_from_list(self, messages: List[Any]) -> MessageGroupCollection`

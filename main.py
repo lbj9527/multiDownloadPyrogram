@@ -46,7 +46,11 @@ class MultiClientDownloader:
         # 初始化各个管理器
         self.client_manager = ClientManager(self.config.telegram)
         self.download_manager = DownloadManager(self.config.download)
-        self.message_grouper = MessageGrouper()
+
+        # 根据配置决定是否启用结构保持
+        preserve_structure = getattr(self.workflow_config, 'preserve_structure', False) if self.workflow_config else False
+
+        self.message_grouper = MessageGrouper(preserve_structure=preserve_structure)
         self.task_distributor = TaskDistributor()
 
         # 模板处理器 (Phase 2)
@@ -263,10 +267,25 @@ class MultiClientDownloader:
             data_source = TelegramDataSource(client)
             temp_storage = TelegramMeStorage(client)
 
+            # 创建媒体组保持配置
+            from core.upload.staged.preservation_config import MediaGroupPreservationConfig
+
+            preserve_structure = getattr(self.workflow_config, 'preserve_structure', False)
+            media_group_config = None
+
+            if preserve_structure:
+                group_timeout = getattr(self.workflow_config, 'group_timeout', 300)
+                media_group_config = MediaGroupPreservationConfig(
+                    enabled=True,
+                    preserve_original_structure=True,
+                    group_timeout_seconds=group_timeout
+                )
+
             staged_config = StagedUploadConfig(
                 batch_size=self.workflow_config.staged_batch_size,
                 cleanup_after_success=self.workflow_config.cleanup_after_success,
-                cleanup_after_failure=self.workflow_config.cleanup_after_failure
+                cleanup_after_failure=self.workflow_config.cleanup_after_failure,
+                media_group_preservation=media_group_config
             )
 
             staged_manager = StagedUploadManager(
@@ -458,7 +477,10 @@ def create_workflow_config_from_args(args) -> Optional[WorkflowConfig]:
             # 分阶段上传配置（现在是默认行为）
             staged_batch_size=args.batch_size,
             cleanup_after_success=not args.no_cleanup_success,
-            cleanup_after_failure=args.cleanup_failure
+            cleanup_after_failure=args.cleanup_failure,
+            # 媒体组完整性保持配置
+            preserve_structure=args.preserve_structure,
+            group_timeout=args.group_timeout
         )
     else:
         return None
@@ -511,6 +533,12 @@ def parse_arguments():
                        help="成功后不清理临时文件")
     parser.add_argument("--cleanup-failure", action="store_true",
                        help="失败后也清理临时文件")
+
+    # 媒体组完整性保持参数
+    parser.add_argument("--preserve-structure", action="store_true",
+                       help="保持原始消息结构（单条消息→单条消息，媒体组→媒体组）")
+    parser.add_argument("--group-timeout", type=int, default=300,
+                       help="媒体组收集超时时间，秒 (默认: 300)")
 
     args = parser.parse_args()
 

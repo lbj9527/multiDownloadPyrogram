@@ -6,6 +6,7 @@ from typing import List, Any, Optional
 from pyrogram.client import Client
 from pyrogram.errors import FloodWait
 from utils.logging_utils import LoggerMixin
+from .structure_info import MessageStructureExtractor
 
 class MessageFetcher(LoggerMixin):
     """消息获取器"""
@@ -73,8 +74,11 @@ class MessageFetcher(LoggerMixin):
         # 按消息ID排序确保顺序正确，同时过滤掉无效消息
         all_messages = sorted([msg for msg in all_messages if msg and not getattr(msg, 'empty', True)], key=lambda x: x.id)
 
-        self.log_info(f"🎉 并发获取完成！{successful_clients}/{len(self.clients)} 个客户端成功，共获取 {len(all_messages)} 条有效消息")
-        return all_messages
+        # 新增：为所有消息添加结构信息
+        enhanced_messages = MessageStructureExtractor.enhance_messages_batch(all_messages)
+
+        self.log_info(f"🎉 并发获取完成！{successful_clients}/{len(self.clients)} 个客户端成功，共获取 {len(enhanced_messages)} 条有效消息")
+        return enhanced_messages
     
     async def fetch_message_range(
         self,

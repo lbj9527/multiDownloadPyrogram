@@ -14,18 +14,26 @@ from .data_source import DataSource, MediaData
 from .temporary_storage import TemporaryStorage, TemporaryMediaItem
 from .media_group_manager import MediaGroupManager, MediaGroupBatch
 from .target_distributor import TargetDistributor, DistributionResult
+from .preservation_config import MediaGroupPreservationConfig
 
 
 @dataclass
 class StagedUploadConfig:
     """分阶段上传配置"""
-    batch_size: int = 10                    # 媒体组大小
+    batch_size: int = 10                    # 媒体组大小（仅在非媒体组保持模式下使用）
     max_concurrent_distributions: int = 3   # 最大并发分发数
     cleanup_after_success: bool = True      # 成功后清理临时文件
     cleanup_after_failure: bool = False     # 失败后清理临时文件
     retry_delay: float = 5.0                # 重试延迟
     max_retries: int = 3                    # 最大重试次数
     progress_callback_interval: int = 5     # 进度回调间隔
+
+    # 新增媒体组完整性配置
+    media_group_preservation: Optional[MediaGroupPreservationConfig] = None
+
+    def __post_init__(self):
+        if self.media_group_preservation is None:
+            self.media_group_preservation = MediaGroupPreservationConfig()
 
 
 @dataclass

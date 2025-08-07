@@ -42,6 +42,17 @@ class MediaData:
     width: Optional[int] = None
     height: Optional[int] = None
     duration: Optional[int] = None
+
+    # 新增消息结构信息
+    original_group_id: Optional[str] = None      # 原始媒体组ID
+    group_position: Optional[int] = None         # 在组中的位置
+    is_single_message: bool = True               # 是否为单条消息
+    group_total_count: Optional[int] = None      # 媒体组总数量（如果已知）
+
+    @property
+    def is_group_member(self) -> bool:
+        """是否属于媒体组"""
+        return not self.is_single_message and self.original_group_id is not None
     
     def get_display_name(self) -> str:
         """获取显示名称"""
@@ -123,7 +134,21 @@ class TelegramDataSource(DataSource):
             
             # 获取媒体尺寸和时长信息
             width, height, duration = self._get_media_dimensions(message)
-            
+
+            # 使用预提取的结构信息
+            structure_info = getattr(message, '_structure_info', None)
+            if structure_info:
+                original_group_id = structure_info.group_id
+                is_single_message = structure_info.is_single
+                group_position = structure_info.position
+                group_total_count = structure_info.total_count
+            else:
+                # 兜底：实时提取
+                original_group_id = getattr(message, 'media_group_id', None)
+                is_single_message = not bool(original_group_id)
+                group_position = None
+                group_total_count = None
+
             return MediaData(
                 file_data=download_result.file_data,
                 file_name=download_result.file_name,
@@ -135,7 +160,12 @@ class TelegramDataSource(DataSource):
                 source_chat_id=str(message.chat.id) if message.chat else None,
                 width=width,
                 height=height,
-                duration=duration
+                duration=duration,
+                # 新增结构信息
+                original_group_id=original_group_id,
+                group_position=group_position,
+                is_single_message=is_single_message,
+                group_total_count=group_total_count
             )
             
         except Exception as e:

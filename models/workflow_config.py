@@ -48,6 +48,10 @@ class WorkflowConfig:
     cleanup_after_success: bool = True    # 成功后清理临时文件
     cleanup_after_failure: bool = False   # 失败后清理临时文件
 
+    # 媒体组完整性保持配置
+    preserve_structure: bool = False      # 是否保持原始消息结构
+    group_timeout: int = 300             # 媒体组收集超时时间（秒）
+
     # 执行配置
     # 注意：并发数由 config/settings.py 中的 TelegramConfig.session_names 数量决定
     batch_size: int = 10               # 批处理大小
