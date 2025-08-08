@@ -15,6 +15,7 @@ from .temporary_storage import TemporaryStorage, TemporaryMediaItem
 from .media_group_manager import MediaGroupManager, MediaGroupBatch
 from .target_distributor import TargetDistributor, DistributionResult
 from .preservation_config import MediaGroupPreservationConfig
+from models.message_group import ClientTaskAssignment, MessageGroup
 
 
 @dataclass
@@ -103,6 +104,33 @@ class StagedUploadManager(LoggerMixin):
         self.staged_items: List[TemporaryMediaItem] = []
         self.pending_cleanup: List[TemporaryMediaItem] = []
     
+    async def upload_with_structure_awareness(self,
+                                            assignment: ClientTaskAssignment,
+                                            target_channels: List[str],
+                                            client: Client,
+                                            preserve_structure: bool = False,
+                                            template_processor: Optional[Any] = None,
+                                            progress_callback: Optional[Callable] = None) -> StagedUploadResult:
+        """
+        结构感知的分阶段上传
+
+        Args:
+            assignment: 包含媒体组信息的任务分配
+            target_channels: 目标频道列表
+            client: Pyrogram客户端
+            preserve_structure: 是否保持原始媒体组结构
+            template_processor: 模板处理器
+            progress_callback: 进度回调函数
+        """
+        if preserve_structure and assignment.has_media_groups():
+            return await self._upload_with_structure_preservation(
+                assignment, target_channels, client, template_processor, progress_callback
+            )
+        else:
+            # 回退到传统模式
+            messages = assignment.get_all_messages()
+            return await self.upload_with_staging(messages, target_channels, client, progress_callback)
+
     async def upload_with_staging(self,
                                 source_items: List[Any],
                                 target_channels: List[str],
@@ -156,7 +184,81 @@ class StagedUploadManager(LoggerMixin):
             await self._emergency_cleanup()
             
             return result
-    
+
+    async def _upload_with_structure_preservation(self,
+                                                assignment: ClientTaskAssignment,
+                                                target_channels: List[str],
+                                                client: Client,
+                                                template_processor: Optional[Any] = None,
+                                                progress_callback: Optional[Callable] = None) -> StagedUploadResult:
+        """
+        保持结构的上传处理
+        """
+        self.log_info(f"开始结构保持上传: {assignment.get_group_count()} 个原始媒体组")
+
+        result = StagedUploadResult(
+            total_items=assignment.total_messages,
+            total_channels=len(target_channels)
+        )
+
+        total_success = 0
+        total_failed = 0
+        start_time = time.time()
+
+        try:
+            # 按原始媒体组逐个处理
+            for group_index, original_group in enumerate(assignment.get_original_groups(), 1):
+                self.log_info(f"处理原始媒体组 {group_index}/{assignment.get_group_count()}: {len(original_group.messages)} 个文件")
+
+                if progress_callback:
+                    progress_callback(f"正在处理媒体组 {group_index}/{assignment.get_group_count()}")
+
+                try:
+                    # 阶段1: 下载并暂存当前媒体组
+                    temp_items = await self._stage_media_group(original_group, client, template_processor)
+
+                    if not temp_items:
+                        self.log_warning(f"媒体组 {group_index} 暂存失败，跳过")
+                        total_failed += len(original_group.messages)
+                        continue
+
+                    # 阶段2: 保持原始结构分发到目标频道
+                    success = await self._distribute_original_group(temp_items, target_channels, client)
+
+                    if success:
+                        total_success += len(temp_items)
+                        self.log_info(f"✅ 媒体组 {group_index} 分发成功")
+                    else:
+                        total_failed += len(temp_items)
+                        self.log_error(f"❌ 媒体组 {group_index} 分发失败")
+
+                    # 阶段3: 清理当前媒体组的临时文件
+                    await self._cleanup_temp_items(temp_items, client)
+
+                except Exception as e:
+                    self.log_error(f"处理媒体组 {group_index} 时发生错误: {e}")
+                    total_failed += len(original_group.messages)
+                    result.errors.append(f"媒体组 {group_index}: {str(e)}")
+
+            # 生成结果
+            result.staged_items = total_success + total_failed
+            result.distributed_items = total_success
+            result.failed_items = total_failed
+            result.end_time = time.time()
+
+            duration = result.get_duration()
+            success_rate = result.get_success_rate() * 100
+
+            self.log_info(f"分阶段上传完成: 成功率 {success_rate:.1f}%, 耗时 {duration:.1f}秒")
+
+            return result
+
+        except Exception as e:
+            self.log_error(f"结构保持上传失败: {e}")
+            result.errors.append(str(e))
+            result.end_time = time.time()
+            return result
+
     async def _stage_1_data_acquisition_and_staging(self,
                                                   source_items: List[Any],
                                                   client: Client,
@@ -297,7 +399,137 @@ class StagedUploadManager(LoggerMixin):
         finally:
             self.staged_items.clear()
             self.pending_cleanup.clear()
-    
+
+    async def _stage_media_group(self,
+                                group: MessageGroup,
+                                client: Client,
+                                template_processor: Optional[Any] = None) -> List[TemporaryMediaItem]:
+        """暂存单个媒体组"""
+        temp_items = []
+
+        for message in group.messages:
+            try:
+                # 下载到内存
+                media_data = await self.data_source.get_media_data(message)
+                if not media_data:
+                    continue
+
+                # 模板处理（如果需要）
+                if template_processor:
+                    # 这里可以添加模板处理逻辑
+                    pass
+
+                # 暂存到me聊天
+                temp_item = await self.temporary_storage.store_media(media_data)
+                if temp_item:
+                    temp_items.append(temp_item)
+
+            except Exception as e:
+                self.log_error(f"暂存消息 {message.id} 失败: {e}")
+
+        return temp_items
+
+    async def _distribute_original_group(self,
+                                       temp_items: List[TemporaryMediaItem],
+                                       target_channels: List[str],
+                                       client: Client) -> bool:
+        """分发单个原始媒体组到目标频道"""
+        try:
+            if not temp_items:
+                self.log_warning("没有临时项目可分发")
+                return False
+
+            # 从临时项目构建输入媒体组
+            input_media_group = []
+            for temp_item in temp_items:
+                try:
+                    # 获取临时消息
+                    temp_message = await client.get_messages("me", temp_item.message_id)
+                    if temp_message and temp_message.media:
+                        # 将Message对象转换为InputMedia对象
+                        input_media = await self._convert_message_to_input_media(temp_message, temp_item)
+                        if input_media:
+                            input_media_group.append(input_media)
+                except Exception as e:
+                    self.log_error(f"获取临时消息 {temp_item.message_id} 失败: {e}")
+
+            if not input_media_group:
+                self.log_error("无法构建输入媒体组")
+                return False
+
+            # 创建单个媒体组批次（保持原始结构）
+            from .media_group_manager import MediaGroupType
+            media_group_batch = MediaGroupBatch(
+                group_type=MediaGroupType.PHOTO_VIDEO,  # 默认使用照片视频类型
+                items=temp_items
+            )
+
+            self.log_info(f"准备分发媒体组: {len(input_media_group)} 个InputMedia对象到 {len(target_channels)} 个频道")
+
+            # 分发到所有目标频道
+            distribution_result = await self.target_distributor.distribute_media_group(
+                client, media_group_batch, input_media_group, target_channels
+            )
+
+            return distribution_result.is_successful()
+
+        except Exception as e:
+            self.log_error(f"分发原始媒体组失败: {e}")
+            return False
+
+    async def _cleanup_temp_items(self, temp_items: List[TemporaryMediaItem], client: Client):
+        """清理临时项目"""
+        try:
+            if temp_items:
+                cleaned_count = await self.temporary_storage.cleanup_batch(temp_items)
+                self.log_debug(f"清理了 {cleaned_count}/{len(temp_items)} 个临时文件")
+        except Exception as e:
+            self.log_error(f"清理临时文件失败: {e}")
+
+    async def _convert_message_to_input_media(self, message, temp_item: TemporaryMediaItem):
+        """将Message对象转换为InputMedia对象"""
+        try:
+            from pyrogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAnimation
+
+            # 获取原始文件名和标题
+            original_caption = getattr(message, 'caption', None) or ""
+            file_name = temp_item.media_data.file_name if temp_item.media_data else "unknown"
+
+            # 根据媒体类型创建对应的InputMedia对象
+            if message.photo:
+                return InputMediaPhoto(
+                    media=message.photo.file_id,
+                    caption=original_caption
+                )
+            elif message.video:
+                return InputMediaVideo(
+                    media=message.video.file_id,
+                    caption=original_caption,
+                    duration=getattr(message.video, 'duration', None),
+                    width=getattr(message.video, 'width', None),
+                    height=getattr(message.video, 'height', None)
+                )
+            elif message.animation:
+                return InputMediaAnimation(
+                    media=message.animation.file_id,
+                    caption=original_caption,
+                    duration=getattr(message.animation, 'duration', None),
+                    width=getattr(message.animation, 'width', None),
+                    height=getattr(message.animation, 'height', None)
+                )
+            elif message.document:
+                return InputMediaDocument(
+                    media=message.document.file_id,
+                    caption=original_caption
+                )
+            else:
+                self.log_warning(f"不支持的媒体类型: {type(message.media)}")
+                return None
+
+        except Exception as e:
+            self.log_error(f"转换消息为InputMedia失败: {e}")
+            return None
+
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         return {

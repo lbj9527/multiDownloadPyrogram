@@ -256,11 +256,15 @@ class MultiClientDownloader:
         self._summarize_staged_forward_results(results, len(messages))
 
     async def _staged_forward_client_messages(self, client, assignment):
-        """单个客户端的分阶段转发任务"""
+        """单个客户端的分阶段转发任务 - 增强版"""
         client_name = assignment.client_name
-        messages = assignment.get_all_messages()
 
-        self.log_info(f"🔄 {client_name} 开始分阶段转发 {len(messages)} 个文件...")
+        self.log_info(f"🔄 {client_name} 开始分阶段转发...")
+
+        if self.workflow_config.preserve_structure:
+            self.log_info(f"{client_name}: 使用结构保持模式，处理 {assignment.get_group_count()} 个原始媒体组")
+        else:
+            self.log_info(f"{client_name}: 使用传统模式，处理 {assignment.total_messages} 个文件")
 
         try:
             # 创建分阶段上传组件
@@ -298,11 +302,13 @@ class MultiClientDownloader:
             def progress_callback(message: str):
                 self.log_info(f"{client_name}: {message}")
 
-            # 执行分阶段上传
-            result = await staged_manager.upload_with_staging(
-                source_items=messages,
+            # 使用结构感知的上传方法
+            result = await staged_manager.upload_with_structure_awareness(
+                assignment=assignment,  # 传递完整的assignment对象
                 target_channels=self.workflow_config.target_channels,
                 client=client,
+                preserve_structure=self.workflow_config.preserve_structure,
+                template_processor=self.template_processor,
                 progress_callback=progress_callback
             )
 
@@ -311,7 +317,7 @@ class MultiClientDownloader:
             return {
                 "client_name": client_name,
                 "staged_result": result,
-                "total_messages": len(messages)
+                "total_messages": assignment.total_messages
             }
 
         except Exception as e:
@@ -319,7 +325,7 @@ class MultiClientDownloader:
             return {
                 "client_name": client_name,
                 "error": str(e),
-                "total_messages": len(messages)
+                "total_messages": assignment.total_messages
             }
 
     def _summarize_staged_forward_results(self, results: List, total_messages: int):

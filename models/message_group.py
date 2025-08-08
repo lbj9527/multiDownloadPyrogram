@@ -119,13 +119,13 @@ class MessageGroupCollection:
 
 @dataclass
 class ClientTaskAssignment:
-    """客户端任务分配"""
+    """客户端任务分配 - 增强版"""
     client_name: str
     message_groups: List[MessageGroup] = field(default_factory=list)
     total_messages: int = 0
     total_files: int = 0
     estimated_size: int = 0  # 真实文件大小总和（字节）
-    
+
     def add_group(self, group: MessageGroup):
         """添加消息组"""
         self.message_groups.append(group)
@@ -133,13 +133,32 @@ class ClientTaskAssignment:
         self.total_files += group.total_files
         # 累加真实文件大小
         self.estimated_size += group.estimated_size
-    
+
     def get_all_messages(self) -> List[Any]:
-        """获取所有消息"""
+        """获取所有消息的扁平化列表（向后兼容）"""
         all_messages = []
         for group in self.message_groups:
             all_messages.extend(group.messages)
         return all_messages
+
+    def get_structured_messages(self) -> Dict[str, List[Any]]:
+        """获取按媒体组ID组织的消息字典"""
+        structured = {}
+        for group in self.message_groups:
+            structured[group.group_id] = group.messages
+        return structured
+
+    def get_original_groups(self) -> List[MessageGroup]:
+        """获取原始媒体组列表"""
+        return self.message_groups.copy()
+
+    def has_media_groups(self) -> bool:
+        """检查是否包含媒体组"""
+        return len(self.message_groups) > 0
+
+    def get_group_count(self) -> int:
+        """获取媒体组数量"""
+        return len(self.message_groups)
     
 
 
@@ -147,18 +166,34 @@ class ClientTaskAssignment:
 
 @dataclass
 class TaskDistributionResult:
-    """任务分配结果"""
+    """任务分配结果 - 增强版"""
     client_assignments: List[ClientTaskAssignment] = field(default_factory=list)
     distribution_strategy: str = ""
     total_messages: int = 0
     total_files: int = 0
-    
+    balance_metrics: Dict[str, float] = field(default_factory=dict)
+
     def add_assignment(self, assignment: ClientTaskAssignment):
         """添加客户端分配"""
         self.client_assignments.append(assignment)
         self.total_messages += assignment.total_messages
         self.total_files += assignment.total_files
-    
+
+    def get_assignment_by_client(self, client_name: str) -> Optional[ClientTaskAssignment]:
+        """根据客户端名称获取任务分配"""
+        for assignment in self.client_assignments:
+            if assignment.client_name == client_name:
+                return assignment
+        return None
+
+    def get_total_groups(self) -> int:
+        """获取总媒体组数量"""
+        return sum(assignment.get_group_count() for assignment in self.client_assignments)
+
+    def has_structure_preservation_capability(self) -> bool:
+        """检查是否支持结构保持"""
+        return all(assignment.has_media_groups() for assignment in self.client_assignments)
+
     def get_load_balance_stats(self) -> Dict[str, Any]:
         """获取负载均衡统计"""
         if not self.client_assignments:
@@ -169,7 +204,7 @@ class TaskDistributionResult:
         # 将大小分布转换为MB单位
         real_sizes_mb = [size / (1024 * 1024) for size in real_sizes]
 
-        return {
+        stats = {
             "clients_count": len(self.client_assignments),
             "file_distribution": file_counts,
             "size_distribution": real_sizes_mb,
@@ -178,5 +213,9 @@ class TaskDistributionResult:
             "average_files_per_client": sum(file_counts) / len(file_counts),
             "average_size_per_client": sum(real_sizes_mb) / len(real_sizes_mb)
         }
+
+        # 更新balance_metrics
+        self.balance_metrics = stats
+        return stats
     
 
